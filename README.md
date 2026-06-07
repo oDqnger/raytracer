@@ -1,7 +1,7 @@
 # Raytracer
 
-![alt text](https://github.com/oDqnger/raytracer/blob/main/image.png "approx")
 ![alt text](https://github.com/oDqnger/raytracer/blob/main/test.png "approx")
+![alt text](https://github.com/oDqnger/raytracer/blob/main/image.png "approx")
 
 Features:  
     Lambert's cosine law  
