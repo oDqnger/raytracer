@@ -25,6 +25,7 @@ typedef struct {
 } Vector;
 
 typedef struct {
+  float islight;
   unsigned char color[3];
   float shinniness;
   float reflectiveness;
@@ -200,8 +201,11 @@ Vector return_color(vector<Sphere> spheres, vector<Light> lights, Ray ray, vecto
       closest_sphere = spheres[i];
     }
   }
- 
+  
   if (min_time < INFINITY) {
+    if (closest_sphere.material.islight > 0) {
+      return {(float)closest_sphere.material.color[0] * closest_sphere.material.islight, (float)closest_sphere.material.color[1] * closest_sphere.material.islight, (float)closest_sphere.material.color[2] * closest_sphere.material.islight};
+    }
     Vector sphere_coords = get_coords_from_ray(&(ray.start_pos), min_time, &(ray.direction));
 
     Vector summat = sub_vec(&sphere_coords, &(closest_sphere.center));
@@ -280,12 +284,13 @@ int main() {
  
   Vector camera_pos = {0,0,0};
   vector<Sphere> spheres = {
-    {{-1.2,0,4}, 0.3, {{255, 0, 0}, 0, 0}},
-    {{-0.6,0,4}, 0.3, {{255, 0,0}, 0.5, 0.5}},
-    {{0.6,0,4}, 0.3, {{255, 0,0}, 0, 1.0}},
-    {{0.0,0,4}, 0.3, {{255, 0,0}, 0.5, 0.98}},
-    {{1.2,0,4}, 0.3, {{255, 0,0}, 0.95, 0.5}},
-    {{0,-5001,0}, 5000, {{128, 128, 128}, 0, 0}},
+    {{-1.2,0,4}, 0.3, {0, {255, 0, 0}, 0, 0}},
+    {{-0.6,0,4}, 0.3, {0, {255, 0,0}, 0.5, 0.5}},
+    {{0.0,0,4}, 0.3, {0, {255, 0,0}, 0.0, 1.00}},
+    {{0.6,0,4}, 0.3, {0, {255, 0,0}, 0.5, 0.98}},
+    {{1.2,0,4}, 0.3, {0, {255, 0,0}, 0.95, 0.5}},
+    {{0,-5001,0}, 5000, {0, {128, 128, 128}, 0, 0}},
+    {{0,1,3}, 0.1, {1, {255, 255,255},0,0}},
   };
 
   vector<Plane> planes = {
@@ -298,7 +303,7 @@ int main() {
     // {2, POSITIONAL, {-1,1,3}},
   };
 
-  constexpr int ray_samples = 5;
+  constexpr int ray_samples = 50;
  
   for (int y = 0; y<HEIGHT; y++) {
     // std::cout << y << "/" << HEIGHT << std::endl;
@@ -324,6 +329,6 @@ int main() {
     }
   }
  
-  int success = stbi_write_png("image.png", WIDTH, HEIGHT, COMP, data, WIDTH * COMP);
+  int success = stbi_write_png("test.png", WIDTH, HEIGHT, COMP, data, WIDTH * COMP);
   return 0;
 }
