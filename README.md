@@ -1,5 +1,7 @@
 # Raytracer
 
+![alt text](https://github.com/oDqnger/raytracer/blob/main/image.png)
+
 Features:  
     Lambert's cosine law  
     Diffuse reflection  
