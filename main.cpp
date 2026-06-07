@@ -296,7 +296,7 @@ int main() {
     // {2, POSITIONAL, {-1,1,3}},
   };
 
-  constexpr int ray_samples = 10;
+  constexpr int ray_samples = 100;
  
   for (int y = 0; y<HEIGHT; y++) {
     // std::cout << y << "/" << HEIGHT << std::endl;
