@@ -14,7 +14,7 @@
  
 #define TBOUND 10000000
 
-#define MAX_BOUNCE_REFLECTION 2
+#define MAX_BOUNCE_REFLECTION 3
  
 using std::vector;
  
@@ -137,7 +137,7 @@ float ray_sphere_interception(Vector* d, Vector* o, Vector* center, float radius
   return 0;
 }
  
-float illumination_equation(float ambience, vector<Light> light, Vector* normal, Vector* sphere_coords) {
+float illumination_equation(vector<Light> light, Vector* normal, Vector* sphere_coords) {
   float total_illum = 0;
   Vector light_dir;
   for (int i = 0; i<light.size(); i++) {
@@ -165,6 +165,7 @@ typedef struct {
   Vector direction;
   float intensity;
   float starting_t;
+  int bounces;
 } Ray;
 
 inline double random_double() {
@@ -184,12 +185,11 @@ Vector gen_rand_vec() {
   return random_vec;
 }
  
-Vector return_color(vector<Sphere> spheres, vector<Light> lights, float ambience, Ray ray, int bounces, vector<Plane> planes) {
+Vector return_color(vector<Sphere> spheres, vector<Light> lights, Ray ray, vector<Plane> planes) {
   Vector color = {135, 206, 235};
   Vector reflective_color = {135,206,235};
   float min_time = INFINITY;
   Sphere closest_sphere;
-  int bounce = bounces;
   for (int i = 0; i<spheres.size(); i++) {
     float t = ray_sphere_interception(&(ray.direction), &(ray.start_pos), &(spheres[i].center), spheres[i].radius, ray.starting_t);
     if (t > 0 && t < min_time) {
@@ -203,24 +203,7 @@ Vector return_color(vector<Sphere> spheres, vector<Light> lights, float ambience
 
     Vector summat = sub_vec(&sphere_coords, &(closest_sphere.center));
     Vector normal = normalize_vec(&summat);
-    Vector view = sub_vec(&sphere_coords, &(ray.start_pos));
 
-    if (closest_sphere.reflectivness > 0) {
-      bounce+=1;
-      if (bounce <= MAX_BOUNCE_REFLECTION) {
-        Vector direction = reflect(&normal, &(ray.direction));
-        Ray reflected_ray = {sphere_coords, direction, 1, 0.01};
-        Vector shiny_vec = {(float)rand(), (float)rand(), (float)rand()};
-        shiny_vec = normalize_vec(&shiny_vec);
-        shiny_vec = scale_vec(&shiny_vec, 1-closest_sphere.shinniness);
-        reflected_ray.direction = add_vec(&(reflected_ray.direction), &shiny_vec);
-        reflected_ray.direction = normalize_vec(&(reflected_ray.direction));
-        reflective_color = return_color(spheres, lights, ambience, reflected_ray, bounce, planes);
-        reflective_color.x = reflective_color.x;
-        reflective_color.y = reflective_color.y;
-        reflective_color.z = reflective_color.z;
-      }
-    }
     bool in_shadow = false;
     for (int l = 0; l<lights.size(); l++) {
       for (int k = 0; k<spheres.size(); k++) {
@@ -232,7 +215,7 @@ Vector return_color(vector<Sphere> spheres, vector<Light> lights, float ambience
       }
     }
     if (!in_shadow) {
-      float total_illum = illumination_equation(ambience, lights, &normal, &sphere_coords);
+      float total_illum = illumination_equation(lights, &normal, &sphere_coords);
      
       color.x = closest_sphere.color[0] * total_illum > 255 ? 255 : closest_sphere.color[0] * total_illum;
       color.y = closest_sphere.color[1] * total_illum > 255 ? 255 : closest_sphere.color[1] * total_illum;
@@ -242,25 +225,40 @@ Vector return_color(vector<Sphere> spheres, vector<Light> lights, float ambience
       color.y = 0;
       color.z = 0;
     }
+    bool did_reflect = false;
+    if (closest_sphere.reflectivness > 0) {
+      ray.bounces += 1;
+      if (ray.bounces <= MAX_BOUNCE_REFLECTION) {
+        Vector direction = reflect(&normal, &(ray.direction));
+        Ray reflected_ray = {sphere_coords, direction, 1, 0.01, ray.bounces};
+        Vector shiny_vec = {(float)rand(), (float)rand(), (float)rand()};
+        shiny_vec = normalize_vec(&shiny_vec);
+        shiny_vec = scale_vec(&shiny_vec, 1-closest_sphere.shinniness);
+        reflected_ray.direction = add_vec(&(reflected_ray.direction), &shiny_vec);
+        reflected_ray.direction = normalize_vec(&(reflected_ray.direction));
+        reflective_color = return_color(spheres, lights, reflected_ray, planes);
+        reflective_color.x = reflective_color.x;
+        reflective_color.y = reflective_color.y;
+        reflective_color.z = reflective_color.z;
+      }
+      did_reflect = true;
+    } 
     color.x = color.x * (1-closest_sphere.reflectivness) * ray.intensity + reflective_color.x * closest_sphere.reflectivness;
     color.y = color.y * (1-closest_sphere.reflectivness) * ray.intensity + reflective_color.y * closest_sphere.reflectivness;
     color.z = color.z * (1-closest_sphere.reflectivness) * ray.intensity + reflective_color.z * closest_sphere.reflectivness;
-    
-    if (bounce <= MAX_BOUNCE_REFLECTION) {
+    if (ray.bounces <= MAX_BOUNCE_REFLECTION && did_reflect == false) {
+
       Vector random_dir = gen_rand_vec();
       if (dot_prod(&random_dir, &normal) < 0) {
         random_dir = scale_vec(&random_dir, -1);
       }
       random_dir = add_vec(&normal, &random_dir);
       random_dir = normalize_vec(&random_dir);
-      Ray diffuse_ray = {sphere_coords, random_dir,ray.intensity*0.5f, 0.001};
-      bounce+=1;
-      Vector diffuse_color = return_color(spheres, lights, ambience, diffuse_ray, bounce, planes);
+      Ray diffuse_ray = {sphere_coords, random_dir,ray.intensity*0.5f, 0.001, ray.bounces};
+      Vector diffuse_color = return_color(spheres, lights, diffuse_ray, planes);
       color.x = color.x + diffuse_color.x * closest_sphere.color[0] / 255.0f;
       color.y = color.y + diffuse_color.y * closest_sphere.color[1] / 255.0f;
       color.z = color.z + diffuse_color.z * closest_sphere.color[2] / 255.0f;
-
-      // clamp
       color.x = std::min(color.x, 255.0f);
       color.y = std::min(color.y, 255.0f);
       color.z = std::min(color.z, 255.0f);
@@ -279,7 +277,7 @@ int main() {
  
   Vector camera_pos = {0,0,0};
   vector<Sphere> spheres = {
-    {{0,0,4}, 0.5, {255, 0, 0}, 0, 0},
+    {{0,0,4}, 0.5, {255, 0, 0}, 0.8, 0.2},
     {{1,0,4}, 0.5, {255, 0,0}, 0, 0},
     {{-1,0,4}, 0.5, {255, 0,0}, 0, 0},
     {{0,-5001,0}, 5000, {128, 128, 128}, 0, 0},
@@ -289,14 +287,13 @@ int main() {
     // {{0,1,0}, {0,-5,0}},
   };
  
-  float ambience = 0.4;
   vector<Light> lights = {
     // {1.0, DIRECTIONAL, {0,1,0}},
     {1, POSITIONAL, {0.5,0.5,3}},
     // {2, POSITIONAL, {-1,1,3}},
   };
 
-  constexpr int ray_samples = 100;
+  constexpr int ray_samples = 10;
  
   for (int y = 0; y<HEIGHT; y++) {
     // std::cout << y << "/" << HEIGHT << std::endl;
@@ -310,8 +307,8 @@ int main() {
         // direction.z = sinf(angle) * direction.y + cosf(angle) * direction.z + 0;
         // direction.x = cosf(angle) * direction.x + sinf(angle) * direction.z + 0;
         // direction.z = -sinf(angle) * direction.x + cosf(angle) * direction.z + 0;
-        Ray ray = {camera_pos, direction, 1, 1};
-        Vector color = return_color(spheres, lights, ambience, ray, 0, planes);
+        Ray ray = {camera_pos, direction, 1, 1, 0};
+        Vector color = return_color(spheres, lights, ray, planes);
         final_color.x += color.x;
         final_color.y += color.y;
         final_color.z += color.z;
