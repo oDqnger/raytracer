@@ -190,8 +190,8 @@ Vector gen_rand_vec() {
 }
  
 Vector return_color(vector<Sphere> spheres, vector<Light> lights, Ray ray, vector<Plane> planes) {
-  Vector color = {135, 206, 235};
-  Vector reflective_color = {135,206,235};
+  Vector color = {0,0,0};
+  Vector reflective_color = {0,0,0};
   float min_time = INFINITY;
   Sphere closest_sphere;
   for (int i = 0; i<spheres.size(); i++) {
@@ -204,7 +204,11 @@ Vector return_color(vector<Sphere> spheres, vector<Light> lights, Ray ray, vecto
   
   if (min_time < INFINITY) {
     if (closest_sphere.material.islight > 0) {
-      return {(float)closest_sphere.material.color[0] * closest_sphere.material.islight, (float)closest_sphere.material.color[1] * closest_sphere.material.islight, (float)closest_sphere.material.color[2] * closest_sphere.material.islight};
+      return {
+        std::min((float)closest_sphere.material.color[0] * closest_sphere.material.islight, 255.0f),
+        std::min((float)closest_sphere.material.color[1] * closest_sphere.material.islight, 255.0f),
+        std::min((float)closest_sphere.material.color[2] * closest_sphere.material.islight, 255.0f),
+      };
     }
     Vector sphere_coords = get_coords_from_ray(&(ray.start_pos), min_time, &(ray.direction));
 
@@ -288,9 +292,9 @@ int main() {
     {{-0.6,0,4}, 0.3, {0, {255, 0,0}, 0.5, 0.5}},
     {{0.0,0,4}, 0.3, {0, {255, 0,0}, 0.0, 1.00}},
     {{0.6,0,4}, 0.3, {0, {255, 0,0}, 0.5, 0.98}},
-    {{1.2,0,4}, 0.3, {0, {255, 0,0}, 0.95, 0.5}},
+    {{1.2,0,4}, 0.3, {0, {255, 0,0}, 1.0, 0.4}},
     {{0,-5001,0}, 5000, {0, {128, 128, 128}, 0, 0}},
-    {{0,1,3}, 0.1, {1, {255, 255,255},0,0}},
+    {{0,4,2}, 1.2, {1, {255, 255,255},0,0}},
   };
 
   vector<Plane> planes = {
@@ -299,11 +303,11 @@ int main() {
  
   vector<Light> lights = {
     // {1.0, DIRECTIONAL, {0,1,0}},
-    {1, POSITIONAL, {0,1,3}},
+    {1.2, POSITIONAL, {0,1,3}},
     // {2, POSITIONAL, {-1,1,3}},
   };
 
-  constexpr int ray_samples = 50;
+  constexpr int ray_samples = 100;
  
   for (int y = 0; y<HEIGHT; y++) {
     // std::cout << y << "/" << HEIGHT << std::endl;
