@@ -226,7 +226,7 @@ Vector gen_rand_vec() {
 }
  
 Vector return_color(vector<Sphere> spheres, vector<Light> lights, Ray ray, vector<Triangle> triangles) {
-  Vector color = {135, 206, 250};
+  Vector color = {0,0,0};
   Vector reflective_color = {0,0,0};
   float min_time = INFINITY;
   Sphere closest_sphere;
@@ -275,7 +275,12 @@ Vector return_color(vector<Sphere> spheres, vector<Light> lights, Ray ray, vecto
     for (int l = 0; l<lights.size(); l++) {
       Vector something = sub_vec(&(lights[l].position), &coords);
       for (int k = 0; k<spheres.size(); k++) {
-        float time = ray_sphere_interception(&something, &coords, &(spheres[k].center), spheres[k].radius, 0.001);
+        float time;
+        if (spheres[k].material.islight > 0) {
+          time = ray_sphere_interception(&something, &coords, &(spheres[k].center), spheres[k].radius, 1.5);
+        } else {
+          time = ray_sphere_interception(&something, &coords, &(spheres[k].center), spheres[k].radius, 0.001);
+        }
         if (time != 0) {
           in_shadow = true;
           break;
@@ -356,39 +361,21 @@ int main() {
   const float viewport_h = 1;
   const int d = 1;
  
-  Vector camera_pos = {0.5,0,0};
+  Vector camera_pos = {0,0,0};
 
-vector<Triangle> planes = {
-  // Front face (z = 2.25)
-  {{},{-0.5f,-0.5f,2.25f},{0.5f,-0.5f,2.25f},{0.5f,0.5f,2.25f},{0,{255,0,0},0,0}},
-  {{},{-0.5f,-0.5f,2.25f},{0.5f,0.5f,2.25f},{-0.5f,0.5f,2.25f},{0,{255,0,0},0,0}},
-  // Back face (z = 1.75)
-  {{},{0.5f,-0.5f,1.75f},{-0.5f,-0.5f,1.75f},{-0.5f,0.5f,1.75f},{0,{255,0,0},0,0}},
-  {{},{0.5f,-0.5f,1.75f},{-0.5f,0.5f,1.75f},{0.5f,0.5f,1.75f},{0,{255,0,0},0,0}},
-  // Left face (x = -0.5)
-  {{},{-0.5f,-0.5f,1.75f},{-0.5f,-0.5f,2.25f},{-0.5f,0.5f,2.25f},{0,{255,0,0},0,0}},
-  {{},{-0.5f,-0.5f,1.75f},{-0.5f,0.5f,2.25f},{-0.5f,0.5f,1.75f},{0,{255,0,0},0,0}},
-  // Right face (x = 0.5)
-  {{},{0.5f,-0.5f,2.25f},{0.5f,-0.5f,1.75f},{0.5f,0.5f,1.75f},{0,{255,0,0},0,0}},
-  {{},{0.5f,-0.5f,2.25f},{0.5f,0.5f,1.75f},{0.5f,0.5f,2.25f},{0,{255,0,0},0,0}},
-  // Top face (y = 0.5)
-  {{},{-0.5f,0.5f,2.25f},{0.5f,0.5f,2.25f},{0.5f,0.5f,1.75f},{0,{255,0,0},0,0}},
-  {{},{-0.5f,0.5f,2.25f},{0.5f,0.5f,1.75f},{-0.5f,0.5f,1.75f},{0,{255,0,0},0,0}},
-  // Bottom face (y = -0.5)
-  {{},{-0.5f,-0.5f,1.75f},{0.5f,-0.5f,1.75f},{0.5f,-0.5f,2.25f},{0,{255,0,0},0,0}},
-  {{},{-0.5f,-0.5f,1.75f},{0.5f,-0.5f,2.25f},{-0.5f,-0.5f,2.25f},{0,{255,0,0},0,0}},
-};
 
-for (auto& tri : planes) {
-  Vector d1 = sub_vec(&tri.a3, &tri.a1);
-  Vector d2 = sub_vec(&tri.a2, &tri.a1);
-  tri.normal = cross_product(&d1, &d2);
-  tri.normal = normalize_vec(&tri.normal);
-}
+  vector<Triangle> planes = {
+    {{0.0f, 0.0f, -1.0f},{-0.5f, -0.5, 2.0f},{ 0.5f, -0.5, 2.0f},{ 0.0f,  0, 2.0f},{0, {255,0,0}, 0.0, 0.0}}
+  };
+  // Vector d1 = sub_vec(&(planes[0].a3), &(planes[0].a1));
+  // Vector d2 = sub_vec(&(planes[0].a2), &(planes[0].a1));
+  // planes[0].normal = cross_product(&d1, &d2);
+  // planes[0].normal = normalize_vec(&(planes[0].normal));
+  // planes[0].normal = scale_vec(&(planes[0].normal), -1);
  
   vector<Light> lights = {
     // {1.0, DIRECTIONAL, {0,1,0}},
-    {1.2, POSITIONAL, {0,1,0.8}},
+    {1.2, POSITIONAL, {0,2,2}},
     // {2, POSITIONAL, {-1,1,3}},
   };
 
@@ -399,23 +386,23 @@ for (auto& tri : planes) {
     // {{0.6,0,4}, 0.3, {0, {255, 0,0}, 0.5, 0.98}},
     // {{1.2,0,4}, 0.3, {0, {255, 0,0}, 1.0, 0.4}},
     {{0,-5001,0}, 5000, {0, {128, 128, 128}, 0, 0}},
-    // {lights[0].position, 0.2, {1, {255, 255,255},0,0}},
+    {lights[0].position, 1.2, {1, {255, 255,255},0,0}},
   };
 
-  constexpr int ray_samples = 1;
+  constexpr int ray_samples = 2;
  
   for (int y = 0; y<HEIGHT; y++) {
-    std::cout << y << "/" << HEIGHT << std::endl;
+    // std::cout << y << "/" << HEIGHT << std::endl;
     for (int x = 0; x<WIDTH; x++) {
       Vector final_color = {0,0,0};
       Vector viewport_coords = {canvas_to_viewport(x, viewport_w, WIDTH),-canvas_to_viewport(y, viewport_h, HEIGHT),d};
       Vector direction = sub_vec(&viewport_coords, &camera_pos);
       for (int i = 0; i<ray_samples; i++) {
-        float angle = 20.0 / 360 * 2*3.14;
+        // float angle = 20.0 / 360 * 2*3.14;
         // direction.y = cosf(angle) * direction.y + -sinf(angle) * direction.z + 0;
         // direction.z = sinf(angle) * direction.y + cosf(angle) * direction.z + 0;
-        direction.x = cosf(angle) * direction.x + sinf(angle) * direction.z + 0;
-        direction.z = -sinf(angle) * direction.x + cosf(angle) * direction.z + 0;
+        // direction.x = cosf(angle) * direction.x + sinf(angle) * direction.z + 0;
+        // direction.z = -sinf(angle) * direction.x + cosf(angle) * direction.z + 0;
         Ray ray = {camera_pos, direction, 1, 1, 0};
         Vector color = return_color(spheres, lights, ray, planes);
         final_color.x += color.x;
