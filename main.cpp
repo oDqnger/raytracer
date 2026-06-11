@@ -84,11 +84,22 @@ inline Vector cross_product(Vector a, Vector b) {
  
 Vector rotate_around_x(Vector a, float angle, Vector pivot) {
   a = sub_vec(a, pivot);
-  float radians = angle / 360 * 2*3.14;
-  a.x = a.x * 1 + a.y * 0 + a.z * 0;
-  a.y = a.x * 0 + cosf(radians) * a.y - sinf(radians) * a.z;
-  a.z = a.x * 0 + sinf(radians) * a.y + cosf(radians) * a.z;
-  return add_vec(a, pivot);
+  Vector b = a;
+  float radians = angle * 3.141592 / 180;
+  b.x = a.x * 1 + a.y * 0 + a.z * 0;
+  b.y = a.x * 0 + cosf(radians) * a.y - sinf(radians) * a.z;
+  b.z = a.x * 0 + sinf(radians) * a.y + cosf(radians) * a.z;
+  return add_vec(b, pivot);
+}
+
+Vector rotate_around_y(Vector a, float angle, Vector pivot) {
+  a = sub_vec(a, pivot);
+  Vector b = a;
+  float radians = angle * 3.141592 / 180;
+  b.x = a.x * cosf(radians) + a.y * 0 + a.z * sinf(radians);
+  b.y = a.x * 0 + 1 * a.y + 0 * a.z;
+  b.z = a.x * -sinf(radians) + 0 * a.y + cosf(radians) * a.z;
+  return add_vec(b, pivot);
 }
  
 void display_vector(Vector a) {
@@ -98,13 +109,20 @@ void display_vector(Vector a) {
 inline float calculate_triangle_area(Vector a1, Vector a2, Vector a3) {
   return magnitude(cross_product(sub_vec(a2, a1), sub_vec(a3, a1))) / 2;
 }
- 
+
+inline bool check_within_range(float value, float upper, float lower, float comparision) {
+  if ((value >= comparision - lower) && (value <= comparision + upper)) {
+    return true;
+  }
+  return false;
+}
+
 bool point_on_triangle(Vector a1, Vector a2, Vector a3, Vector p) {
   float total_area = calculate_triangle_area(a1, a2, a3);
   float u = calculate_triangle_area(p, a1, a2);
   float v = calculate_triangle_area(p, a1, a3);
   float w = calculate_triangle_area(p, a2, a3);
-  if ((u+v+w == total_area) && (u>=0 && v>=0 && w>=0)) {
+  if (check_within_range(u+w+v, 0.01, 0.01, total_area) && (u>=0 && v>=0 && w>=0)) {
     return true;
   }
   return false;
@@ -184,7 +202,29 @@ inline double random_double() {
 inline float random_double(double min, double max) {
     return min + (max-min)*random_double();
 }
- 
+
+float min(vector<float> values) {
+  float min_val = INFINITY;
+  for (int i = 0; i<values.size(); i++) {
+    if (values[i] < min_val) {
+      min_val = values[i];
+    }
+  }
+
+  return min_val;
+}
+
+float max(vector<float> values) {
+  float max_val = -INFINITY;
+  for (int i = 0; i<values.size(); i++) {
+    if (values[i] > max_val) {
+      max_val = values[i];
+    }
+  }
+
+  return max_val;
+}
+
 class Triangle {
   public:
     Vector a1;
@@ -211,11 +251,29 @@ class Triangle {
       a2 = scale_vec(a2, factor);
       a3 = scale_vec(a3, factor);
     }
-    void rotate_x(float angle, Vector pivot) {
+
+    void rotate_x(float angle) {
+      Vector pivot = {
+        (min({a1.x, a2.x, a3.x})+max({a1.x, a2.x, a3.x})) / 2,
+        (min({a1.y, a2.y, a3.y})+max({a1.y, a2.y, a3.y})) / 2,
+        (min({a1.z, a2.z, a3.z})+max({a1.z, a2.z, a3.z})) / 2,
+      };
       a1 = rotate_around_x(a1, angle, pivot);
       a2 = rotate_around_x(a2, angle, pivot);
       a3 = rotate_around_x(a3, angle, pivot);
-      normal = rotate_around_x(normal, angle, pivot);
+      normal = rotate_around_x(normal, angle, {0,0,0});
+    }
+
+    void rotate_y(float angle) {
+      Vector pivot = {
+        (min({a1.x, a2.x, a3.x})+max({a1.x, a2.x, a3.x})) / 2,
+        (min({a1.y, a2.y, a3.y})+max({a1.y, a2.y, a3.y})) / 2,
+        (min({a1.z, a2.z, a3.z})+max({a1.z, a2.z, a3.z})) / 2,
+      };
+      a1 = rotate_around_y(a1, angle, pivot);
+      a2 = rotate_around_y(a2, angle, pivot);
+      a3 = rotate_around_y(a3, angle, pivot);
+      normal = rotate_around_y(normal, angle, {0,0,0});
     }
 };
  
@@ -400,30 +458,41 @@ int main() {
   Vector camera_pos = {0,0,0};
  
   vector<Triangle> triangles = {
-    // Triangle({-0.5f, -0.5, 2.0f},{ 0.5f, -0.5, 2.0f},{-0.5f,  0, 2.0f},{0, {255,0,0}, 0, 0}, {0,0,1}),
-    // Triangle({0.5f, 0, 2.0f},{ 0.5f, -0.5, 2.0f},{-0.5f,  0, 2.0f},{0, {255,0,0}, 0, 0}, {0,0,1}),
+    Triangle({-0.5f, -0.5, 2.0f},{ 0.5f, -0.5, 2.0f},{-0.5f,  0, 2.0f},{0, {255,0,0}, 0, 0}, {0,0,1}),
+    Triangle({0.5f, 0, 2.0f},{ 0.5f, -0.5, 2.0f},{-0.5f,  0, 2.0f},{0, {255,0,0}, 0, 0}, {0,0,1}),
+
+    Triangle({-0.5f, -0.5, 4.0f},{ 0.5f, -0.5, 4.0f},{-0.5f,  0, 4.0f},{0, {255,0,0}, 0, 0}, {0,0,-1}),
+    Triangle({0.5f, 0, 4.0f},{ 0.5f, -0.5, 4.0f},{-0.5f,  0, 4.0f},{0, {255,0,0}, 0, 0}, {0,0,-1}),
   };
- 
-  // triangles[0].rotate_x(30, {0, 0,0});
-  // triangles[1].rotate_x(30, {0, 0,0});
+
+  for (int i = 0; i<triangles.size(); i++) {
+    // triangles[i].translate({0,0,2});
+    triangles[i].rotate_y(80);
+  }
+  
+  // triangles[0].rotate_x(85.0);
+  // triangles[1].rotate_x(85.0);
+  //
+  // triangles[0].rotate_y(35.0);
+  // triangles[1].rotate_y(35.0);
  
   vector<Light> lights = {
     {1.1, POSITIONAL, {2.5,2,1}},
   };
  
   vector<Sphere> spheres = {
-    {{-1.2,0,4}, 0.3, {0, {255, 0, 0}, 0, 0}},
-    {{-0.6,0,4}, 0.3, {0, {255, 0,0}, 0.5, 0.5}},
-    {{0.0,0,4}, 0.3, {0, {255, 0,0}, 0.0, 1.00}},
-    {{0.6,0,4}, 0.3, {0, {255, 0,0}, 0.5, 0.98}},
-    {{1.2,0,4}, 0.3, {0, {255, 0,0}, 1.0, 0.4}},
+    // {{-1.2,0,4}, 0.3, {0, {255, 0, 0}, 0, 0}},
+    // {{-0.6,0,4}, 0.3, {0, {255, 0,0}, 0.5, 0.5}},
+    // {{0.0,0,4}, 0.3, {0, {255, 0,0}, 0.0, 1.00}},
+    // {{0.6,0,4}, 0.3, {0, {255, 0,0}, 0.5, 0.98}},
+    // {{1.2,0,4}, 0.3, {0, {255, 0,0}, 1.0, 0.4}},
     {{0,-5001,0}, 5000, {0, {128, 128, 128}, 0, 0}},
     {lights[0].position, 1.2, {1, {255, 255,255},0,0}},
   };
  
   // camera_pos = rotate_around_x(camera_pos, -30, {0,0,0});
  
-  constexpr int ray_samples = 10;
+  constexpr int ray_samples = 1;
  
   for (int y = 0; y<HEIGHT; y++) {
     // std::cout << y << "/" << HEIGHT << std::endl;
