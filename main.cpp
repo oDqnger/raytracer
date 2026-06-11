@@ -226,21 +226,50 @@ Vector gen_rand_vec() {
   }
   return normalize_vec(random_vec);
 }
- 
-Vector return_color(vector<Sphere> spheres, vector<Light> lights, Ray ray, vector<Triangle> triangles) {
-  Vector color = {0,0,0};
-  Vector reflective_color = {0,0,0};
+
+class Object {
+  public:
+    Sphere sphere;
+    Triangle triangle;
+    Material material;
+    Vector normal;
+    bool is_sphere;
+    bool is_object;
+    float min_time;
+    Object(Sphere s, float m) {
+      sphere = s;
+      material = sphere.material;
+      is_sphere = true;
+      is_object = true;
+      min_time = m;
+    }
+    Object(Triangle t, float m) {
+      triangle = t;
+      material = triangle.material;
+      is_sphere = false;
+      is_object = true;
+      min_time = m;
+      normal = triangle.normal;
+    }
+    Object() {
+      is_object = false;
+    }
+    void calc_normal(Vector coords) {
+      normal = normalize_vec(sub_vec(coords, sphere.center));
+    }
+};
+
+Object return_intersection(vector<Sphere> spheres, vector<Triangle> triangles, Ray ray) {
   float min_time = INFINITY;
-  Sphere closest_sphere;
+  Object closest_object;
   for (int i = 0; i<spheres.size(); i++) {
     float t = ray_sphere_interception(ray.direction, ray.start_pos, spheres[i].center, spheres[i].radius, ray.starting_t);
     if (t > 0 && t < min_time) {
       min_time = t;
-      closest_sphere = spheres[i];
+      closest_object = Object(spheres[i], min_time);
     }
   }
  
-  Triangle closest_triangle;
   for (int i = 0; i<triangles.size(); i++) {
     float t = ray_plane_interception(ray.start_pos, triangles[i].a1, triangles[i].normal, ray.direction, ray.starting_t);
     if (t>0 && t < min_time) {
@@ -248,94 +277,110 @@ Vector return_color(vector<Sphere> spheres, vector<Light> lights, Ray ray, vecto
       bool istriangle = point_on_triangle(triangles[i].a1, triangles[i].a2, triangles[i].a3, triang_coords);
       if (istriangle) {
         min_time = t;
-        closest_triangle = triangles[i];
-        closest_sphere = {{}, -1};
+        closest_object = Object(triangles[i], min_time);
       }
     }
   }
-  Material material_object = closest_sphere.radius == -1 ? closest_triangle.material : closest_sphere.material;
- 
-  if (min_time < INFINITY) {
-    if (material_object.islight > 0) {
-      return {
-        std::min((float)material_object.color[0] * material_object.islight, 255.0f),
-        std::min((float)material_object.color[1] * material_object.islight, 255.0f),
-        std::min((float)material_object.color[2] * material_object.islight, 255.0f),
-      };
+
+  return closest_object;
+}
+
+bool shadow_calc(vector<Light> lights, vector<Sphere> spheres, vector<Triangle> triangles, Object closest_object, Ray ray) {
+  Vector coords = get_coords_from_ray(ray.start_pos, closest_object.min_time, ray.direction);
+  bool in_shadow = false;
+  for (int l = 0; l<lights.size(); l++) {
+    Vector something = sub_vec(lights[l].position, coords);
+    for (int k = 0; k<spheres.size(); k++) {
+      float time;
+      if (spheres[k].material.islight > 0) {
+        continue;
+      } else {
+        time = ray_sphere_interception(something, coords, spheres[k].center, spheres[k].radius, 0.001);
+        if (time != 0) {
+          in_shadow = true;
+          break;
+        }
+      }
     }
-    Vector coords = get_coords_from_ray(ray.start_pos, min_time, ray.direction);
-    Vector normal = closest_sphere.radius != -1 ? normalize_vec(sub_vec(coords, closest_sphere.center)) : closest_triangle.normal;
- 
-    bool in_shadow = false;
-    for (int l = 0; l<lights.size(); l++) {
-      Vector something = sub_vec(lights[l].position, coords);
-      for (int k = 0; k<spheres.size(); k++) {
-        float time;
-        if (spheres[k].material.islight > 0) {
-          continue;
-        } else {
-          time = ray_sphere_interception(something, coords, spheres[k].center, spheres[k].radius, 0.001);
-          if (time != 0) {
+
+    if (!in_shadow) {
+      for (int k = 0; k<triangles.size(); k++) {
+        float time = ray_plane_interception(coords, triangles[k].a2, triangles[k].normal, something, 0.01);
+        if (time > 0) {
+          Vector triang_coords = get_coords_from_ray((coords), time, something);
+          bool istriangle = point_on_triangle((triangles[k].a1), triangles[k].a2, triangles[k].a3, triang_coords);
+          if (istriangle) {
             in_shadow = true;
             break;
           }
         }
       }
- 
-      if (!in_shadow) {
-        for (int k = 0; k<triangles.size(); k++) {
-          float time = ray_plane_interception(coords, triangles[k].a2, triangles[k].normal, something, 0.01);
-          if (time > 0) {
-            Vector triang_coords = get_coords_from_ray((coords), time, something);
-            bool istriangle = point_on_triangle((triangles[k].a1), triangles[k].a2, triangles[k].a3, triang_coords);
-            if (istriangle) {
-              in_shadow = true;
-              break;
-            }
-          }
-        }
-      }
     }
+  }
+
+  return in_shadow;
+}
+
+Vector return_color(vector<Sphere> spheres, vector<Light> lights, Ray ray, vector<Triangle> triangles, Object closest_object, bool in_shadow) {
+  Vector color = {0,0,0};
+  Vector reflective_color = {0,0,0};
  
+  if (closest_object.is_object) {
+    if (closest_object.material.islight > 0) {
+      return {
+        std::min((float)closest_object.material.color[0] * closest_object.material.islight, 255.0f),
+        std::min((float)closest_object.material.color[1] * closest_object.material.islight, 255.0f),
+        std::min((float)closest_object.material.color[2] * closest_object.material.islight, 255.0f),
+      };
+    }
+    Vector coords = get_coords_from_ray(ray.start_pos, closest_object.min_time, ray.direction);
+    if (closest_object.is_sphere) {
+      closest_object.calc_normal(coords);
+    }
+  
     if (!in_shadow) {
       float total_illum;
-      if (closest_sphere.radius == -1) {
-          normal = scale_vec(normal, -1);
+      if (closest_object.is_sphere == false) {
+          closest_object.normal = scale_vec(closest_object.normal, -1);
       }
-      total_illum = illumination_equation(lights, normal, coords);
+      total_illum = illumination_equation(lights, closest_object.normal, coords);
      
-      color.x = material_object.color[0] * total_illum > 255 ? 255 : material_object.color[0] * total_illum;
-      color.y = material_object.color[1] * total_illum > 255 ? 255 : material_object.color[1] * total_illum;
-      color.z = material_object.color[2] * total_illum > 255 ? 255 : material_object.color[2] * total_illum;
+      color.x = closest_object.material.color[0] * total_illum > 255 ? 255 : closest_object.material.color[0] * total_illum;
+      color.y = closest_object.material.color[1] * total_illum > 255 ? 255 : closest_object.material.color[1] * total_illum;
+      color.z = closest_object.material.color[2] * total_illum > 255 ? 255 : closest_object.material.color[2] * total_illum;
     } else {
       color.x = 0;
       color.y = 0;
       color.z = 0;
     }
     bool did_reflect = false;
-    if (material_object.reflectiveness > 0) {
+    if (closest_object.material.reflectiveness > 0) {
       ray.bounces += 1;
       if (ray.bounces <= MAX_BOUNCE_REFLECTION) {
-        Ray reflected_ray = {coords, reflect(normal, ray.direction), 1, 0.01, ray.bounces};
+        Ray reflected_ray = {coords, reflect(closest_object.normal, ray.direction), 1, 0.01, ray.bounces};
         Vector shiny_vec = {(float)rand(), (float)rand(), (float)rand()};
-        reflected_ray.direction = normalize_vec(add_vec(reflected_ray.direction, scale_vec(normalize_vec(shiny_vec), material_object.shinniness)));
-        reflective_color = return_color(spheres, lights, reflected_ray, triangles);
+        reflected_ray.direction = normalize_vec(add_vec(reflected_ray.direction, scale_vec(normalize_vec(shiny_vec), closest_object.material.shinniness)));
+        Object co = return_intersection(spheres, triangles, reflected_ray);
+        bool sha = shadow_calc(lights, spheres, triangles, co, reflected_ray);
+        reflective_color = return_color(spheres, lights, reflected_ray, triangles, co, sha);
       }
       did_reflect = true;
     }
-    color.x = color.x * (1-material_object.reflectiveness) * ray.intensity + reflective_color.x * material_object.reflectiveness;
-    color.y = color.y * (1-material_object.reflectiveness) * ray.intensity + reflective_color.y * material_object.reflectiveness;
-    color.z = color.z * (1-material_object.reflectiveness) * ray.intensity + reflective_color.z * material_object.reflectiveness;
+    color.x = color.x * (1-closest_object.material.reflectiveness) * ray.intensity + reflective_color.x * closest_object.material.reflectiveness;
+    color.y = color.y * (1-closest_object.material.reflectiveness) * ray.intensity + reflective_color.y * closest_object.material.reflectiveness;
+    color.z = color.z * (1-closest_object.material.reflectiveness) * ray.intensity + reflective_color.z * closest_object.material.reflectiveness;
     if (ray.bounces <= MAX_BOUNCE_REFLECTION && did_reflect == false) {
       Vector random_dir = gen_rand_vec();
-      if (dot_prod(random_dir, normal) < 0) {
+      if (dot_prod(random_dir, closest_object.normal) < 0) {
         random_dir = scale_vec(random_dir, -1);
       }
-      Ray diffuse_ray = {coords, normalize_vec(add_vec(normal, random_dir)),ray.intensity*0.5f, 0.001, ray.bounces};
-      Vector diffuse_color = return_color(spheres, lights, diffuse_ray, triangles);
-      color.x = color.x + diffuse_color.x * material_object.color[0] / 255.0f;
-      color.y = color.y + diffuse_color.y * material_object.color[1] / 255.0f;
-      color.z = color.z + diffuse_color.z * material_object.color[2] / 255.0f;
+      Ray diffuse_ray = {coords, normalize_vec(add_vec(closest_object.normal, random_dir)),ray.intensity*0.5f, 0.001, ray.bounces};
+      Object co = return_intersection(spheres, triangles, diffuse_ray);
+      bool sha = shadow_calc(lights, spheres, triangles, co, diffuse_ray);
+      Vector diffuse_color = return_color(spheres, lights, diffuse_ray, triangles, co, sha);
+      color.x = color.x + diffuse_color.x * closest_object.material.color[0] / 255.0f;
+      color.y = color.y + diffuse_color.y * closest_object.material.color[1] / 255.0f;
+      color.z = color.z + diffuse_color.z * closest_object.material.color[2] / 255.0f;
       color.x = std::min(color.x, 255.0f);
       color.y = std::min(color.y, 255.0f);
       color.z = std::min(color.z, 255.0f);
@@ -355,8 +400,8 @@ int main() {
   Vector camera_pos = {0,0,0};
  
   vector<Triangle> triangles = {
-    Triangle({-0.5f, -0.5, 2.0f},{ 0.5f, -0.5, 2.0f},{-0.5f,  0, 2.0f},{0, {255,0,0}, 0, 0}, {0,0,1}),
-    Triangle({0.5f, 0, 2.0f},{ 0.5f, -0.5, 2.0f},{-0.5f,  0, 2.0f},{0, {255,0,0}, 0, 0}, {0,0,1}),
+    // Triangle({-0.5f, -0.5, 2.0f},{ 0.5f, -0.5, 2.0f},{-0.5f,  0, 2.0f},{0, {255,0,0}, 0, 0}, {0,0,1}),
+    // Triangle({0.5f, 0, 2.0f},{ 0.5f, -0.5, 2.0f},{-0.5f,  0, 2.0f},{0, {255,0,0}, 0, 0}, {0,0,1}),
   };
  
   // triangles[0].rotate_x(30, {0, 0,0});
@@ -376,9 +421,9 @@ int main() {
     {lights[0].position, 1.2, {1, {255, 255,255},0,0}},
   };
  
-  camera_pos = rotate_around_x(camera_pos, -30, {0,0,0});
+  // camera_pos = rotate_around_x(camera_pos, -30, {0,0,0});
  
-  constexpr int ray_samples = 1;
+  constexpr int ray_samples = 10;
  
   for (int y = 0; y<HEIGHT; y++) {
     // std::cout << y << "/" << HEIGHT << std::endl;
@@ -386,14 +431,18 @@ int main() {
       Vector final_color = {0,0,0};
       Vector viewport_coords = {canvas_to_viewport(x, viewport_w, WIDTH),-canvas_to_viewport(y, viewport_h, HEIGHT),d};
       Vector direction = sub_vec(viewport_coords, camera_pos);
+
+      Ray ray = {camera_pos, direction, 1, 1, 0};
+      Object closest_object = return_intersection(spheres, triangles, ray);
+      bool in_shadow = shadow_calc(lights, spheres, triangles, closest_object, ray);
+
       for (int i = 0; i<ray_samples; i++) {
         // float angle = 20.0 / 360 * 2*3.14;
         // direction.y = cosf(angle) * direction.y + -sinf(angle) * direction.z + 0;
         // direction.z = sinf(angle) * direction.y + cosf(angle) * direction.z + 0;
         // direction.x = cosf(angle) * direction.x + sinf(angle) * direction.z + 0;
         // direction.z = -sinf(angle) * direction.x + cosf(angle) * direction.z + 0;
-        Ray ray = {camera_pos, direction, 1, 1, 0};
-        Vector color = return_color(spheres, lights, ray, triangles);
+        Vector color = return_color(spheres, lights, ray, triangles, closest_object, in_shadow);
         final_color.x += color.x;
         final_color.y += color.y;
         final_color.z += color.z;
