@@ -8,12 +8,12 @@
 #define STB_IMAGE_WRITE_IMPLEMENTATION
 #include "./stb_image_write.h"
  
-#define WIDTH 800 
+#define WIDTH 800
 #define HEIGHT 800
 #define COMP 3
  
 #define TBOUND 10000000
-
+ 
 #define MAX_BOUNCE_REFLECTION 30
  
 using std::vector;
@@ -23,14 +23,14 @@ typedef struct {
   float y;
   float z;
 } Vector;
-
+ 
 typedef struct {
   float islight;
   unsigned char color[3];
   float shinniness;
   float reflectiveness;
 } Material;
-
+ 
 typedef struct {
   Vector center;
   float radius;
@@ -47,87 +47,59 @@ typedef struct {
   enum LightType type;
   Vector position;
 } Light;
-
-typedef struct {
-  Vector normal;
-  Vector a1;
-  Vector a2;
-  Vector a3;
-  Material material;
-} Triangle;
-
-float dot_prod(Vector* a, Vector *b) {
-  return a->x * b->x + a->y * b->y + a->z * b->z;
+ 
+inline float dot_prod(Vector a, Vector b) {
+  return a.x * b.x + a.y * b.y + a.z * b.z;
 }
  
-Vector sub_vec(Vector* a, Vector* b) {
-  Vector dvector;
-  dvector.x = a->x - b->x;
-  dvector.y = a->y - b->y;
-  dvector.z = a->z - b->z;
- 
-  return dvector;
+inline Vector sub_vec(Vector a, Vector b) {
+  return {a.x - b.x, a.y-b.y, a.z - b.z};
 }
  
-Vector add_vec(Vector* a, Vector* b) {
-  Vector dvector;
-  dvector.x = a->x + b->x;
-  dvector.y = a->y + b->y;
-  dvector.z = a->z + b->z;
- 
-  return dvector;
+inline Vector add_vec(Vector a, Vector b) {
+  return {a.x + b.x, a.y+b.y, a.z+b.z};
 }
  
-Vector scale_vec(Vector* a, float scale) {
-  Vector svec;
-  svec.x = a->x * scale;
-  svec.y = a->y * scale;
-  svec.z = a->z * scale;
-  return svec;
+inline Vector scale_vec(Vector a, float scale) {
+  return {a.x * scale, a.y*scale, a.z*scale};
 }
  
-Vector reflect(Vector* normal, Vector* incident) {
+inline Vector reflect(Vector normal, Vector incident) {
   Vector neg_inc = scale_vec(incident, -1);
-  Vector first_part = scale_vec(normal, 2 * dot_prod(normal, &neg_inc));
-  Vector rvec = sub_vec(&first_part, &neg_inc);
-  return rvec;
+  return sub_vec(scale_vec(normal, 2 * dot_prod(normal, neg_inc)), neg_inc);
 }
  
-inline float magnitude(Vector* vec) {
-  return sqrt((vec->x*vec->x + vec->y * vec->y + vec->z * vec->z));
+inline float magnitude(Vector vec) {
+  return sqrt((vec.x*vec.x + vec.y * vec.y + vec.z * vec.z));
 }
  
-inline Vector normalize_vec(Vector* vec) {
-  Vector nvec;
+inline Vector normalize_vec(Vector vec) {
   float mag = magnitude(vec);
-  nvec.x = vec->x / mag;
-  nvec.y = vec->y / mag;
-  nvec.z = vec->z / mag;
-  return nvec;
-}
-
-Vector cross_product(Vector* a, Vector* b) {
-  Vector cp = {};
-  cp.x = a->y*b->z - a->z*b->y;
-  cp.y = a->z*b->x - a->x*b->z;
-  cp.z = a->x*b->y - a->y*b->x;
-  return cp;
+  return {vec.x / mag, vec.y / mag, vec.z / mag};
 }
  
-void display_vector(Vector* a) {
-  std::cout << "(" << a->x << ", " << a->y << ", " << a->z << ")\n";
+inline Vector cross_product(Vector a, Vector b) {
+  return {a.y*b.z - a.z*b.y, a.z*b.x - a.x*b.z, a.x*b.y - a.y*b.x};
 }
-
-float calculate_triangle_area(Vector* a1, Vector *a2, Vector *a3) {
-  Vector a1a2 = sub_vec(a2, a1);
-  Vector a1a3 = sub_vec(a3, a1);
-  Vector cp = cross_product(&a1a2, &a1a3);
-  float total_area = magnitude(&cp) / 2;
-
-  return total_area;
+ 
+Vector rotate_around_x(Vector a, float angle, Vector pivot) {
+  a = sub_vec(a, pivot);
+  float radians = angle / 360 * 2*3.14;
+  a.x = a.x * 1 + a.y * 0 + a.z * 0;
+  a.y = a.x * 0 + cosf(radians) * a.y - sinf(radians) * a.z;
+  a.z = a.x * 0 + sinf(radians) * a.y + cosf(radians) * a.z;
+  return add_vec(a, pivot);
 }
-
-bool point_on_triangle(Vector* a1, Vector* a2, Vector *a3, Vector *p) {
+ 
+void display_vector(Vector a) {
+  std::cout << "(" << a.x << ", " << a.y << ", " << a.z << ")\n";
+}
+ 
+inline float calculate_triangle_area(Vector a1, Vector a2, Vector a3) {
+  return magnitude(cross_product(sub_vec(a2, a1), sub_vec(a3, a1))) / 2;
+}
+ 
+bool point_on_triangle(Vector a1, Vector a2, Vector a3, Vector p) {
   float total_area = calculate_triangle_area(a1, a2, a3);
   float u = calculate_triangle_area(p, a1, a2);
   float v = calculate_triangle_area(p, a1, a3);
@@ -141,22 +113,20 @@ bool point_on_triangle(Vector* a1, Vector* a2, Vector *a3, Vector *p) {
 inline float canvas_to_viewport(int x, int viewport_w, int t) {
   return x * ((float) viewport_w / t) - ((float)viewport_w / 2);
 }
-
-float ray_plane_interception(Vector* o, Vector* a, Vector* n, Vector* d, float min_bound) {
-  Vector top_part = sub_vec(o, a);
-
-  float t1 = -(dot_prod(&top_part, n))/(dot_prod(d, n));
+ 
+float ray_plane_interception(Vector o, Vector a, Vector n, Vector d, float min_bound) {
+  float t1 = -(dot_prod(sub_vec(o, a), n))/(dot_prod(d, n));
   if (t1 > min_bound) {
     return t1;
   }
   return 0;
 }
-
-float ray_sphere_interception(Vector* d, Vector* o, Vector* center, float radius, float min_bound) {
+ 
+float ray_sphere_interception(Vector d, Vector o, Vector center, float radius, float min_bound) {
   Vector co = sub_vec(o, center);
   float a = dot_prod(d, d);
-  float b = 2 * (dot_prod(&co, d));
-  float c = dot_prod(&co, &co) - (radius * radius);
+  float b = 2 * (dot_prod(co, d));
+  float c = dot_prod(co, co) - (radius * radius);
   float discriminant = b*b - 4*a*c;
   if (discriminant >= 0) {
     float sq = sqrt(discriminant);
@@ -177,27 +147,26 @@ float ray_sphere_interception(Vector* d, Vector* o, Vector* center, float radius
   return 0;
 }
  
-float illumination_equation(vector<Light> light, Vector* normal, Vector* sphere_coords) {
+float illumination_equation(vector<Light> light, Vector normal, Vector sphere_coords) {
   float total_illum = 0;
   Vector light_dir;
   for (int i = 0; i<light.size(); i++) {
     if (light[i].type == POSITIONAL) {
-      light_dir = sub_vec(&(light[i].position), sphere_coords);
+      light_dir = sub_vec((light[i].position), sphere_coords);
     } else {
       light_dir = light[i].position;
     }
-    float diffuse_dot = dot_prod(normal, &light_dir);
+    float diffuse_dot = dot_prod(normal, light_dir);
     if (diffuse_dot > 0) {
-      total_illum += (light[i].intensity * ((diffuse_dot) / (magnitude(normal) * magnitude(&light_dir))));
+      total_illum += (light[i].intensity * ((diffuse_dot) / (magnitude(normal) * magnitude(light_dir))));
     }
   }
  
   return total_illum;
 }
  
-Vector get_coords_from_ray(Vector *camera_pos, float time, Vector* direction) {
-  Vector first_part = scale_vec(direction, time);
-  return add_vec(camera_pos, &first_part);
+inline Vector get_coords_from_ray(Vector camera_pos, float time, Vector direction) {
+  return add_vec(camera_pos, scale_vec(direction, time));
 }
  
 typedef struct {
@@ -207,22 +176,55 @@ typedef struct {
   float starting_t;
   int bounces;
 } Ray;
-
+ 
 inline double random_double() {
     return std::rand() / (RAND_MAX + 1.0);
 }
-
+ 
 inline float random_double(double min, double max) {
     return min + (max-min)*random_double();
 }
-
+ 
+class Triangle {
+  public:
+    Vector a1;
+    Vector a2;
+    Vector a3;
+    Vector normal;
+    Material material;
+    Triangle(Vector ua1, Vector ua2, Vector ua3, Material m, Vector n) {
+      a1 = ua1;
+      a2 = ua2;
+      a3 = ua3;
+      material = m;
+      // normal = normalize_vec(cross_product(sub_vec(a2, a1), sub_vec(a3, a1)));
+      normal = n;
+    }
+    Triangle() {}
+    void translate(Vector translation_vector) {
+      a1 = add_vec(a1, translation_vector);
+      a2 = add_vec(a2, translation_vector);
+      a3 = add_vec(a3, translation_vector);
+    }
+    void scale(float factor) {
+      a1 = scale_vec(a1, factor);
+      a2 = scale_vec(a2, factor);
+      a3 = scale_vec(a3, factor);
+    }
+    void rotate_x(float angle, Vector pivot) {
+      a1 = rotate_around_x(a1, angle, pivot);
+      a2 = rotate_around_x(a2, angle, pivot);
+      a3 = rotate_around_x(a3, angle, pivot);
+      normal = rotate_around_x(normal, angle, pivot);
+    }
+};
+ 
 Vector gen_rand_vec() {
   Vector random_vec = {random_double(-1, 1), random_double(-1, 1), random_double(-1, 1)};
-  while (magnitude(&random_vec) > 1) {
+  while (magnitude(random_vec) > 1) {
     random_vec = {random_double(-1, 1), random_double(-1, 1), random_double(-1, 1)};
   }
-  random_vec = normalize_vec(&random_vec);
-  return random_vec;
+  return normalize_vec(random_vec);
 }
  
 Vector return_color(vector<Sphere> spheres, vector<Light> lights, Ray ray, vector<Triangle> triangles) {
@@ -231,19 +233,19 @@ Vector return_color(vector<Sphere> spheres, vector<Light> lights, Ray ray, vecto
   float min_time = INFINITY;
   Sphere closest_sphere;
   for (int i = 0; i<spheres.size(); i++) {
-    float t = ray_sphere_interception(&(ray.direction), &(ray.start_pos), &(spheres[i].center), spheres[i].radius, ray.starting_t);
+    float t = ray_sphere_interception(ray.direction, ray.start_pos, spheres[i].center, spheres[i].radius, ray.starting_t);
     if (t > 0 && t < min_time) {
       min_time = t;
       closest_sphere = spheres[i];
     }
   }
-  
+ 
   Triangle closest_triangle;
   for (int i = 0; i<triangles.size(); i++) {
-    float t = ray_plane_interception(&(ray.start_pos), &(triangles[i].a1), &(triangles[i].normal), &(ray.direction), ray.starting_t);
+    float t = ray_plane_interception(ray.start_pos, triangles[i].a1, triangles[i].normal, ray.direction, ray.starting_t);
     if (t>0 && t < min_time) {
-      Vector triang_coords = get_coords_from_ray(&(ray.start_pos), t, &(ray.direction));
-      bool istriangle = point_on_triangle(&(triangles[i].a1), &(triangles[i].a2), &(triangles[i].a3), &triang_coords);
+      Vector triang_coords = get_coords_from_ray((ray.start_pos), t, ray.direction);
+      bool istriangle = point_on_triangle(triangles[i].a1, triangles[i].a2, triangles[i].a3, triang_coords);
       if (istriangle) {
         min_time = t;
         closest_triangle = triangles[i];
@@ -252,7 +254,7 @@ Vector return_color(vector<Sphere> spheres, vector<Light> lights, Ray ray, vecto
     }
   }
   Material material_object = closest_sphere.radius == -1 ? closest_triangle.material : closest_sphere.material;
-
+ 
   if (min_time < INFINITY) {
     if (material_object.islight > 0) {
       return {
@@ -261,37 +263,31 @@ Vector return_color(vector<Sphere> spheres, vector<Light> lights, Ray ray, vecto
         std::min((float)material_object.color[2] * material_object.islight, 255.0f),
       };
     }
-    Vector coords = get_coords_from_ray(&(ray.start_pos), min_time, &(ray.direction));
-     
-    Vector normal;
-    if (closest_sphere.radius != -1) {
-      Vector summat = sub_vec(&coords, &(closest_sphere.center));
-      normal = normalize_vec(&summat);
-    } else {
-      normal = closest_triangle.normal;
-    }
-
+    Vector coords = get_coords_from_ray(ray.start_pos, min_time, ray.direction);
+    Vector normal = closest_sphere.radius != -1 ? normalize_vec(sub_vec(coords, closest_sphere.center)) : closest_triangle.normal;
+ 
     bool in_shadow = false;
     for (int l = 0; l<lights.size(); l++) {
-      Vector something = sub_vec(&(lights[l].position), &coords);
+      Vector something = sub_vec(lights[l].position, coords);
       for (int k = 0; k<spheres.size(); k++) {
         float time;
         if (spheres[k].material.islight > 0) {
-          time = ray_sphere_interception(&something, &coords, &(spheres[k].center), spheres[k].radius, 1.5);
+          continue;
         } else {
-          time = ray_sphere_interception(&something, &coords, &(spheres[k].center), spheres[k].radius, 0.001);
-        }
-        if (time != 0) {
-          in_shadow = true;
-          break;
+          time = ray_sphere_interception(something, coords, spheres[k].center, spheres[k].radius, 0.001);
+          if (time != 0) {
+            in_shadow = true;
+            break;
+          }
         }
       }
+ 
       if (!in_shadow) {
         for (int k = 0; k<triangles.size(); k++) {
-          float time = ray_plane_interception(&coords, &(triangles[k].a1), &(triangles[k].normal), &something, 0.001);
+          float time = ray_plane_interception(coords, triangles[k].a2, triangles[k].normal, something, 0.01);
           if (time > 0) {
-            Vector triang_coords = get_coords_from_ray(&(coords), time, &something);
-            bool istriangle = point_on_triangle(&(triangles[k].a1), &(triangles[k].a2), &(triangles[k].a3), &triang_coords);
+            Vector triang_coords = get_coords_from_ray((coords), time, something);
+            bool istriangle = point_on_triangle((triangles[k].a1), triangles[k].a2, triangles[k].a3, triang_coords);
             if (istriangle) {
               in_shadow = true;
               break;
@@ -300,8 +296,13 @@ Vector return_color(vector<Sphere> spheres, vector<Light> lights, Ray ray, vecto
         }
       }
     }
+ 
     if (!in_shadow) {
-      float total_illum = illumination_equation(lights, &normal, &coords);
+      float total_illum;
+      if (closest_sphere.radius == -1) {
+          normal = scale_vec(normal, -1);
+      }
+      total_illum = illumination_equation(lights, normal, coords);
      
       color.x = material_object.color[0] * total_illum > 255 ? 255 : material_object.color[0] * total_illum;
       color.y = material_object.color[1] * total_illum > 255 ? 255 : material_object.color[1] * total_illum;
@@ -312,35 +313,25 @@ Vector return_color(vector<Sphere> spheres, vector<Light> lights, Ray ray, vecto
       color.z = 0;
     }
     bool did_reflect = false;
-    if (closest_sphere.material.reflectiveness > 0) {
+    if (material_object.reflectiveness > 0) {
       ray.bounces += 1;
       if (ray.bounces <= MAX_BOUNCE_REFLECTION) {
-        Vector direction = reflect(&normal, &(ray.direction));
-        Ray reflected_ray = {coords, direction, 1, 0.01, ray.bounces};
+        Ray reflected_ray = {coords, reflect(normal, ray.direction), 1, 0.01, ray.bounces};
         Vector shiny_vec = {(float)rand(), (float)rand(), (float)rand()};
-        shiny_vec = normalize_vec(&shiny_vec);
-        shiny_vec = scale_vec(&shiny_vec, material_object.shinniness);
-        reflected_ray.direction = add_vec(&(reflected_ray.direction), &shiny_vec);
-        reflected_ray.direction = normalize_vec(&(reflected_ray.direction));
+        reflected_ray.direction = normalize_vec(add_vec(reflected_ray.direction, scale_vec(normalize_vec(shiny_vec), material_object.shinniness)));
         reflective_color = return_color(spheres, lights, reflected_ray, triangles);
-        reflective_color.x = reflective_color.x;
-        reflective_color.y = reflective_color.y;
-        reflective_color.z = reflective_color.z;
       }
       did_reflect = true;
-    } 
+    }
     color.x = color.x * (1-material_object.reflectiveness) * ray.intensity + reflective_color.x * material_object.reflectiveness;
     color.y = color.y * (1-material_object.reflectiveness) * ray.intensity + reflective_color.y * material_object.reflectiveness;
     color.z = color.z * (1-material_object.reflectiveness) * ray.intensity + reflective_color.z * material_object.reflectiveness;
     if (ray.bounces <= MAX_BOUNCE_REFLECTION && did_reflect == false) {
-
       Vector random_dir = gen_rand_vec();
-      if (dot_prod(&random_dir, &normal) < 0) {
-        random_dir = scale_vec(&random_dir, -1);
+      if (dot_prod(random_dir, normal) < 0) {
+        random_dir = scale_vec(random_dir, -1);
       }
-      random_dir = add_vec(&normal, &random_dir);
-      random_dir = normalize_vec(&random_dir);
-      Ray diffuse_ray = {coords, random_dir,ray.intensity*0.5f, 0.001, ray.bounces};
+      Ray diffuse_ray = {coords, normalize_vec(add_vec(normal, random_dir)),ray.intensity*0.5f, 0.001, ray.bounces};
       Vector diffuse_color = return_color(spheres, lights, diffuse_ray, triangles);
       color.x = color.x + diffuse_color.x * material_object.color[0] / 255.0f;
       color.y = color.y + diffuse_color.y * material_object.color[1] / 255.0f;
@@ -362,41 +353,39 @@ int main() {
   const int d = 1;
  
   Vector camera_pos = {0,0,0};
-
-
-  vector<Triangle> planes = {
-    {{0.0f, 0.0f, -1.0f},{-0.5f, -0.5, 2.0f},{ 0.5f, -0.5, 2.0f},{ 0.0f,  0, 2.0f},{0, {255,0,0}, 0.0, 0.0}}
+ 
+  vector<Triangle> triangles = {
+    Triangle({-0.5f, -0.5, 2.0f},{ 0.5f, -0.5, 2.0f},{-0.5f,  0, 2.0f},{0, {255,0,0}, 0, 0}, {0,0,1}),
+    Triangle({0.5f, 0, 2.0f},{ 0.5f, -0.5, 2.0f},{-0.5f,  0, 2.0f},{0, {255,0,0}, 0, 0}, {0,0,1}),
   };
-  // Vector d1 = sub_vec(&(planes[0].a3), &(planes[0].a1));
-  // Vector d2 = sub_vec(&(planes[0].a2), &(planes[0].a1));
-  // planes[0].normal = cross_product(&d1, &d2);
-  // planes[0].normal = normalize_vec(&(planes[0].normal));
-  // planes[0].normal = scale_vec(&(planes[0].normal), -1);
+ 
+  // triangles[0].rotate_x(30, {0, 0,0});
+  // triangles[1].rotate_x(30, {0, 0,0});
  
   vector<Light> lights = {
-    // {1.0, DIRECTIONAL, {0,1,0}},
-    {1.2, POSITIONAL, {0,2,2}},
-    // {2, POSITIONAL, {-1,1,3}},
+    {1.1, POSITIONAL, {2.5,2,1}},
   };
-
+ 
   vector<Sphere> spheres = {
-    // {{-1.2,0,4}, 0.3, {0, {255, 0, 0}, 0, 0}},
-    // {{-0.6,0,4}, 0.3, {0, {255, 0,0}, 0.5, 0.5}},
-    // {{0.0,0,4}, 0.3, {0, {255, 0,0}, 0.0, 1.00}},
-    // {{0.6,0,4}, 0.3, {0, {255, 0,0}, 0.5, 0.98}},
-    // {{1.2,0,4}, 0.3, {0, {255, 0,0}, 1.0, 0.4}},
+    {{-1.2,0,4}, 0.3, {0, {255, 0, 0}, 0, 0}},
+    {{-0.6,0,4}, 0.3, {0, {255, 0,0}, 0.5, 0.5}},
+    {{0.0,0,4}, 0.3, {0, {255, 0,0}, 0.0, 1.00}},
+    {{0.6,0,4}, 0.3, {0, {255, 0,0}, 0.5, 0.98}},
+    {{1.2,0,4}, 0.3, {0, {255, 0,0}, 1.0, 0.4}},
     {{0,-5001,0}, 5000, {0, {128, 128, 128}, 0, 0}},
     {lights[0].position, 1.2, {1, {255, 255,255},0,0}},
   };
-
-  constexpr int ray_samples = 2;
+ 
+  camera_pos = rotate_around_x(camera_pos, -30, {0,0,0});
+ 
+  constexpr int ray_samples = 1;
  
   for (int y = 0; y<HEIGHT; y++) {
     // std::cout << y << "/" << HEIGHT << std::endl;
     for (int x = 0; x<WIDTH; x++) {
       Vector final_color = {0,0,0};
       Vector viewport_coords = {canvas_to_viewport(x, viewport_w, WIDTH),-canvas_to_viewport(y, viewport_h, HEIGHT),d};
-      Vector direction = sub_vec(&viewport_coords, &camera_pos);
+      Vector direction = sub_vec(viewport_coords, camera_pos);
       for (int i = 0; i<ray_samples; i++) {
         // float angle = 20.0 / 360 * 2*3.14;
         // direction.y = cosf(angle) * direction.y + -sinf(angle) * direction.z + 0;
@@ -404,7 +393,7 @@ int main() {
         // direction.x = cosf(angle) * direction.x + sinf(angle) * direction.z + 0;
         // direction.z = -sinf(angle) * direction.x + cosf(angle) * direction.z + 0;
         Ray ray = {camera_pos, direction, 1, 1, 0};
-        Vector color = return_color(spheres, lights, ray, planes);
+        Vector color = return_color(spheres, lights, ray, triangles);
         final_color.x += color.x;
         final_color.y += color.y;
         final_color.z += color.z;
