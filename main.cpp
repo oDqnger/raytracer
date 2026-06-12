@@ -14,7 +14,7 @@
  
 #define TBOUND 10000000
  
-#define MAX_BOUNCE_REFLECTION 30
+#define MAX_BOUNCE_REFLECTION 1
  
 using std::vector;
  
@@ -276,6 +276,44 @@ class Triangle {
       normal = rotate_around_y(normal, angle, {0,0,0});
     }
 };
+
+class Mesh {
+  public:
+    vector<Triangle> triangles;
+    Mesh(vector<Triangle> t) {
+      triangles = t;
+    }
+    void rotate_x(float angle) {
+
+    }
+    void rotate_y(float angle) {
+      vector<float> all_x;
+      vector<float> all_y;
+      vector<float> all_z;
+      for (int i = 0;i<triangles.size(); i++) {
+        all_x.push_back(triangles[i].a1.x);
+        all_x.push_back(triangles[i].a2.x);
+        all_x.push_back(triangles[i].a3.x);
+
+        all_y.push_back(triangles[i].a1.y);
+        all_y.push_back(triangles[i].a2.y);
+        all_y.push_back(triangles[i].a3.y);
+
+        all_z.push_back(triangles[i].a1.z);
+        all_z.push_back(triangles[i].a2.z);
+        all_z.push_back(triangles[i].a3.z);
+      }
+
+      Vector pivot = {(min(all_x) + max(all_x)) / 2, (min(all_y) + max(all_y))/2, (min(all_z) + max(all_z)) / 2};
+
+      for (int i = 0; i<triangles.size(); i++) {
+        triangles[i].a1 = rotate_around_y(triangles[i].a1, angle, pivot);
+        triangles[i].a2 = rotate_around_y(triangles[i].a2, angle, pivot);
+        triangles[i].a3 = rotate_around_y(triangles[i].a3, angle, pivot);
+        triangles[i].normal = rotate_around_y(triangles[i].normal, angle, {0,0,0});
+      }
+    }
+};
  
 Vector gen_rand_vec() {
   Vector random_vec = {random_double(-1, 1), random_double(-1, 1), random_double(-1, 1)};
@@ -380,7 +418,7 @@ bool shadow_calc(vector<Light> lights, vector<Sphere> spheres, vector<Triangle> 
 }
 
 Vector return_color(vector<Sphere> spheres, vector<Light> lights, Ray ray, vector<Triangle> triangles, Object closest_object, bool in_shadow) {
-  Vector color = {0,0,0};
+  Vector color = {135, 206, 255};
   Vector reflective_color = {0,0,0};
  
   if (closest_object.is_object) {
@@ -461,20 +499,22 @@ int main() {
     Triangle({-0.5f, -0.5, 2.0f},{ 0.5f, -0.5, 2.0f},{-0.5f,  0, 2.0f},{0, {255,0,0}, 0, 0}, {0,0,1}),
     Triangle({0.5f, 0, 2.0f},{ 0.5f, -0.5, 2.0f},{-0.5f,  0, 2.0f},{0, {255,0,0}, 0, 0}, {0,0,1}),
 
-    Triangle({-0.5f, -0.5, 4.0f},{ 0.5f, -0.5, 4.0f},{-0.5f,  0, 4.0f},{0, {255,0,0}, 0, 0}, {0,0,-1}),
-    Triangle({0.5f, 0, 4.0f},{ 0.5f, -0.5, 4.0f},{-0.5f,  0, 4.0f},{0, {255,0,0}, 0, 0}, {0,0,-1}),
+    Triangle({-0.5f, -0.5, 3.0f},{ 0.5f, -0.5, 3.0f},{-0.5f,  0, 3.0f},{0, {255,0,0}, 0, 0}, {0,0,-1}),
+    Triangle({0.5f, 0, 3.0f},{ 0.5f, -0.5, 3.0f},{-0.5f,  0, 3.0f},{0, {255,0,0}, 0, 0}, {0,0,-1}),
+
+    Triangle({-0.5f, 0, 2.0f},{-0.5f, 0, 3.0f},{-0.5f,-0.5, 3.0f},{0, {255,0,255}, 0, 0}, {-1,0,0}),
+    Triangle({-0.5f, -0.5, 2.0f},{-0.5f, 0, 2.0f},{-0.5f, -0.5, 3.0f},{0, {255,0,255}, 0, 0}, {-1,0,0}),
+
+    Triangle({0.5f, 0, 2.0f},{0.5f, 0, 3.0f},{0.5f,-0.5, 3.0f},{0, {255,255,0}, 0, 0}, {1,0,0}),
+    Triangle({0.5f, -0.5, 2.0f},{0.5f, 0, 2.0f},{0.5f, -0.5, 3.0f},{0, {255,255,0}, 0, 0}, {1,0,0}),
   };
 
   for (int i = 0; i<triangles.size(); i++) {
-    // triangles[i].translate({0,0,2});
-    triangles[i].rotate_y(80);
+    triangles[i].translate({0,0,1});
   }
-  
-  // triangles[0].rotate_x(85.0);
-  // triangles[1].rotate_x(85.0);
-  //
-  // triangles[0].rotate_y(35.0);
-  // triangles[1].rotate_y(35.0);
+
+  Mesh cube = Mesh(triangles);
+  cube.rotate_y(30);
  
   vector<Light> lights = {
     {1.1, POSITIONAL, {2.5,2,1}},
@@ -502,8 +542,8 @@ int main() {
       Vector direction = sub_vec(viewport_coords, camera_pos);
 
       Ray ray = {camera_pos, direction, 1, 1, 0};
-      Object closest_object = return_intersection(spheres, triangles, ray);
-      bool in_shadow = shadow_calc(lights, spheres, triangles, closest_object, ray);
+      Object closest_object = return_intersection(spheres, cube.triangles, ray);
+      bool in_shadow = shadow_calc(lights, spheres, cube.triangles, closest_object, ray);
 
       for (int i = 0; i<ray_samples; i++) {
         // float angle = 20.0 / 360 * 2*3.14;
@@ -511,7 +551,7 @@ int main() {
         // direction.z = sinf(angle) * direction.y + cosf(angle) * direction.z + 0;
         // direction.x = cosf(angle) * direction.x + sinf(angle) * direction.z + 0;
         // direction.z = -sinf(angle) * direction.x + cosf(angle) * direction.z + 0;
-        Vector color = return_color(spheres, lights, ray, triangles, closest_object, in_shadow);
+        Vector color = return_color(spheres, lights, ray, cube.triangles, closest_object, in_shadow);
         final_color.x += color.x;
         final_color.y += color.y;
         final_color.z += color.z;
