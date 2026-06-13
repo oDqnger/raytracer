@@ -101,6 +101,16 @@ Vector rotate_around_y(Vector a, float angle, Vector pivot) {
   b.z = a.x * -sinf(radians) + 0 * a.y + cosf(radians) * a.z;
   return add_vec(b, pivot);
 }
+
+Vector rotate_around_z(Vector a, float angle, Vector pivot) {
+  a = sub_vec(a, pivot);
+  Vector b = a;
+  float radians = angle * 3.141592 / 180;
+  b.x = a.x * cosf(radians) - a.y * sinf(radians) + a.z * 0;
+  b.y = a.x * sinf(radians) + cosf(radians) * a.y + 0 * a.z;
+  b.z = a.x * 0 + 0 * a.y + 1 * a.z;
+  return add_vec(b, pivot);
+}
  
 void display_vector(Vector a) {
   std::cout << "(" << a.x << ", " << a.y << ", " << a.z << ")\n";
@@ -122,7 +132,7 @@ bool point_on_triangle(Vector a1, Vector a2, Vector a3, Vector p) {
   float u = calculate_triangle_area(p, a1, a2);
   float v = calculate_triangle_area(p, a1, a3);
   float w = calculate_triangle_area(p, a2, a3);
-  if (check_within_range(u+w+v, 0.01, 0.01, total_area) && (u>=0 && v>=0 && w>=0)) {
+  if (check_within_range(u+w+v, 0.001, 0.001, total_area) && (u>=0 && v>=0 && w>=0)) {
     return true;
   }
   return false;
@@ -246,11 +256,6 @@ class Triangle {
       a2 = add_vec(a2, translation_vector);
       a3 = add_vec(a3, translation_vector);
     }
-    void scale(float factor) {
-      a1 = scale_vec(a1, factor);
-      a2 = scale_vec(a2, factor);
-      a3 = scale_vec(a3, factor);
-    }
 
     void rotate_x(float angle) {
       Vector pivot = {
@@ -275,18 +280,38 @@ class Triangle {
       a3 = rotate_around_y(a3, angle, pivot);
       normal = rotate_around_y(normal, angle, {0,0,0});
     }
+    void scale(Vector scale, Vector pivot) {
+      a1 = sub_vec(a1, pivot);
+      a2 = sub_vec(a2, pivot);
+      a3 = sub_vec(a3, pivot);
+      a1.x = a1.x * scale.x;
+      a1.y = a1.y * scale.y;
+      a1.z = a1.z * scale.z;
+
+      a2.x = a2.x * scale.x;
+      a2.y = a2.y * scale.y;
+      a2.z = a2.z * scale.z;
+
+      a3.x = a3.x * scale.x;
+      a3.y = a3.y * scale.y;
+      a3.z = a3.z * scale.z;
+
+      a1 = add_vec(a1, pivot);
+      a2 = add_vec(a2, pivot);
+      a3 = add_vec(a3, pivot);
+
+      normal.x = normal.x * 1/scale.x;
+      normal.y = normal.y * 1/scale.y;
+      normal.z = normal.z * 1/scale.z;
+    }
 };
 
 class Mesh {
   public:
     vector<Triangle> triangles;
+    Vector pivot;
     Mesh(vector<Triangle> t) {
       triangles = t;
-    }
-    void rotate_x(float angle) {
-
-    }
-    void rotate_y(float angle) {
       vector<float> all_x;
       vector<float> all_y;
       vector<float> all_z;
@@ -302,15 +327,38 @@ class Mesh {
         all_z.push_back(triangles[i].a1.z);
         all_z.push_back(triangles[i].a2.z);
         all_z.push_back(triangles[i].a3.z);
+
+      pivot = {(min(all_x) + max(all_x)) / 2, (min(all_y) + max(all_y))/2, (min(all_z) + max(all_z)) / 2};
       }
-
-      Vector pivot = {(min(all_x) + max(all_x)) / 2, (min(all_y) + max(all_y))/2, (min(all_z) + max(all_z)) / 2};
-
+    }
+    void rotate_x(float angle) {
+      for (int i = 0; i<triangles.size(); i++) {
+        triangles[i].a1 = rotate_around_x(triangles[i].a1, angle, pivot);
+        triangles[i].a2 = rotate_around_x(triangles[i].a2, angle, pivot);
+        triangles[i].a3 = rotate_around_x(triangles[i].a3, angle, pivot);
+        triangles[i].normal = rotate_around_x(triangles[i].normal, angle, {0,0,0});
+      }
+    }
+    void rotate_y(float angle) {
       for (int i = 0; i<triangles.size(); i++) {
         triangles[i].a1 = rotate_around_y(triangles[i].a1, angle, pivot);
         triangles[i].a2 = rotate_around_y(triangles[i].a2, angle, pivot);
         triangles[i].a3 = rotate_around_y(triangles[i].a3, angle, pivot);
         triangles[i].normal = rotate_around_y(triangles[i].normal, angle, {0,0,0});
+      }
+    }
+
+    void rotate_z(float angle) {
+      for (int i = 0; i<triangles.size(); i++) {
+        triangles[i].a1 = rotate_around_z(triangles[i].a1, angle, pivot);
+        triangles[i].a2 = rotate_around_z(triangles[i].a2, angle, pivot);
+        triangles[i].a3 = rotate_around_z(triangles[i].a3, angle, pivot);
+        triangles[i].normal = rotate_around_z(triangles[i].normal, angle, {0,0,0});
+      }
+    }
+    void scale(Vector factor) {
+      for (int i = 0; i<triangles.size(); i++) {
+        triangles[i].scale(factor, pivot);
       }
     }
 };
@@ -465,7 +513,7 @@ Vector return_color(vector<Sphere> spheres, vector<Light> lights, Ray ray, vecto
     color.x = color.x * (1-closest_object.material.reflectiveness) * ray.intensity + reflective_color.x * closest_object.material.reflectiveness;
     color.y = color.y * (1-closest_object.material.reflectiveness) * ray.intensity + reflective_color.y * closest_object.material.reflectiveness;
     color.z = color.z * (1-closest_object.material.reflectiveness) * ray.intensity + reflective_color.z * closest_object.material.reflectiveness;
-    if (ray.bounces <= MAX_BOUNCE_REFLECTION && did_reflect == false) {
+    if (ray.bounces < MAX_BOUNCE_REFLECTION && did_reflect == false) {
       Vector random_dir = gen_rand_vec();
       if (dot_prod(random_dir, closest_object.normal) < 0) {
         random_dir = scale_vec(random_dir, -1);
@@ -496,17 +544,23 @@ int main() {
   Vector camera_pos = {0,0,0};
  
   vector<Triangle> triangles = {
-    Triangle({-0.5f, -0.5, 2.0f},{ 0.5f, -0.5, 2.0f},{-0.5f,  0, 2.0f},{0, {255,0,0}, 0, 0}, {0,0,1}),
-    Triangle({0.5f, 0, 2.0f},{ 0.5f, -0.5, 2.0f},{-0.5f,  0, 2.0f},{0, {255,0,0}, 0, 0}, {0,0,1}),
+    Triangle({-0.5f, -0.5, 2.0f},{ 0.5f, -0.5, 2.0f},{-0.5f,  0.5, 2.0f},{0, {255,0,0}, 0, 0}, {0,0,1}),
+    Triangle({0.5f, 0.5, 2.0f},{ 0.5f, -0.5, 2.0f},{-0.5f,  0.5, 2.0f},{0, {255,0,0}, 0, 0}, {0,0,1}),
 
-    Triangle({-0.5f, -0.5, 3.0f},{ 0.5f, -0.5, 3.0f},{-0.5f,  0, 3.0f},{0, {255,0,0}, 0, 0}, {0,0,-1}),
-    Triangle({0.5f, 0, 3.0f},{ 0.5f, -0.5, 3.0f},{-0.5f,  0, 3.0f},{0, {255,0,0}, 0, 0}, {0,0,-1}),
+    Triangle({-0.5f, -0.5, 3.0f},{ 0.5f, -0.5, 3.0f},{-0.5f,  0.5, 3.0f},{0, {255,0,0}, 0, 0}, {0,0,-1}),
+    Triangle({0.5f, 0.5, 3.0f},{ 0.5f, -0.5, 3.0f},{-0.5f,  0.5, 3.0f},{0, {255,0,0}, 0, 0}, {0,0,-1}),
 
-    Triangle({-0.5f, 0, 2.0f},{-0.5f, 0, 3.0f},{-0.5f,-0.5, 3.0f},{0, {255,0,255}, 0, 0}, {-1,0,0}),
-    Triangle({-0.5f, -0.5, 2.0f},{-0.5f, 0, 2.0f},{-0.5f, -0.5, 3.0f},{0, {255,0,255}, 0, 0}, {-1,0,0}),
+    Triangle({-0.5f, 0.5, 2.0f},{-0.5f, 0.5, 3.0f},{-0.5f,-0.5, 3.0f},{0, {255,0,0}, 0, 0}, {1,0,0}),
+    Triangle({-0.5f, -0.5, 2.0f},{-0.5f, 0.5, 2.0f},{-0.5f, -0.5, 3.0f},{0, {255,0,0}, 0, 0}, {1,0,0}),
 
-    Triangle({0.5f, 0, 2.0f},{0.5f, 0, 3.0f},{0.5f,-0.5, 3.0f},{0, {255,255,0}, 0, 0}, {1,0,0}),
-    Triangle({0.5f, -0.5, 2.0f},{0.5f, 0, 2.0f},{0.5f, -0.5, 3.0f},{0, {255,255,0}, 0, 0}, {1,0,0}),
+    Triangle({0.5f, 0.5, 2.0f},{0.5f, 0.5, 3.0f},{0.5f,-0.5, 3.0f},{0, {255,0,0}, 0, 0}, {-1,0,0}),
+    Triangle({0.5f, -0.5, 2.0f},{0.5f, 0.5, 2.0f},{0.5f, -0.5, 3.0f},{0, {255,0,0}, 0, 0}, {-1,0,0}),
+
+    Triangle({-0.5f, 0.5, 2.0f},{0.5f, 0.5, 2.0f},{-0.5f,0.5, 3.0f},{0, {255,0,0}, 0, 0}, {0,1,0}),
+    Triangle({-0.5f, 0.5, 3.0f},{0.5f, 0.5, 2.0f},{0.5f, 0.5, 3.0f},{0, {255,0,0}, 0, 0}, {0,1,0}),
+
+    Triangle({-0.5f, -0.5, 2.0f},{0.5f, -0.5, 2.0f},{-0.5f,-0.5, 3.0f},{0, {255,0,0}, 0, 0}, {0,-1,0}),
+    Triangle({-0.5f, -0.5, 3.0f},{0.5f, -0.5, 2.0f},{0.5f, -0.5, 3.0f},{0, {255,0,0}, 0, 0}, {0,-1,0}),
   };
 
   for (int i = 0; i<triangles.size(); i++) {
@@ -515,6 +569,8 @@ int main() {
 
   Mesh cube = Mesh(triangles);
   cube.rotate_y(30);
+  // cube.rotate_x(30);
+  cube.scale({0.5, 1.0, 0.5});
  
   vector<Light> lights = {
     {1.1, POSITIONAL, {2.5,2,1}},
@@ -530,8 +586,6 @@ int main() {
     {lights[0].position, 1.2, {1, {255, 255,255},0,0}},
   };
  
-  // camera_pos = rotate_around_x(camera_pos, -30, {0,0,0});
- 
   constexpr int ray_samples = 1;
  
   for (int y = 0; y<HEIGHT; y++) {
@@ -546,11 +600,6 @@ int main() {
       bool in_shadow = shadow_calc(lights, spheres, cube.triangles, closest_object, ray);
 
       for (int i = 0; i<ray_samples; i++) {
-        // float angle = 20.0 / 360 * 2*3.14;
-        // direction.y = cosf(angle) * direction.y + -sinf(angle) * direction.z + 0;
-        // direction.z = sinf(angle) * direction.y + cosf(angle) * direction.z + 0;
-        // direction.x = cosf(angle) * direction.x + sinf(angle) * direction.z + 0;
-        // direction.z = -sinf(angle) * direction.x + cosf(angle) * direction.z + 0;
         Vector color = return_color(spheres, lights, ray, cube.triangles, closest_object, in_shadow);
         final_color.x += color.x;
         final_color.y += color.y;
