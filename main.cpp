@@ -488,6 +488,7 @@ Vector return_color(vector<Sphere> spheres, vector<Light> lights, Ray ray, vecto
       color.y = 0;
       color.z = 0;
     }
+
     bool did_reflect = false;
     if (closest_object.material.reflectiveness > 0) {
       ray.bounces += 1;
@@ -501,6 +502,7 @@ Vector return_color(vector<Sphere> spheres, vector<Light> lights, Ray ray, vecto
       }
       did_reflect = true;
     }
+
     color.x = color.x * (1-closest_object.material.reflectiveness) * ray.intensity + reflective_color.x * closest_object.material.reflectiveness;
     color.y = color.y * (1-closest_object.material.reflectiveness) * ray.intensity + reflective_color.y * closest_object.material.reflectiveness;
     color.z = color.z * (1-closest_object.material.reflectiveness) * ray.intensity + reflective_color.z * closest_object.material.reflectiveness;
@@ -531,9 +533,7 @@ int main() {
   const float viewport_w = 1;
   const float viewport_h = 1;
   const int d = 1;
- 
-  Vector camera_pos = {0,0,-2.0};
- 
+  
   vector<Triangle> cube = {
     Triangle({-0.5f, -0.5, 2.0f},{ 0.5f, -0.5, 2.0f},{-0.5f,  0.5, 2.0f},{0, {255,0,0}, 0, 0}, {0,0,1}),
     Triangle({0.5f, 0.5, 2.0f},{ 0.5f, -0.5, 2.0f},{-0.5f,  0.5, 2.0f},{0, {255,0,0}, 0, 0}, {0,0,1}),
@@ -559,6 +559,9 @@ int main() {
   cube_mesh.translate({-0.2, -0.4, 0.5});
 
   Mesh roof = Mesh({
+    Triangle({-0.5f, -0.5, 1.0f},{ 0.5f, -0.5, 1.0f},{-0.5f,  0.5, 1.0f},{0, {255,255,255}, 0, 0}, {0,0,-1}),
+    Triangle({0.5f, 0.5, 1.0f},{ 0.5f, -0.5, 1.0f},{-0.5f,  0.5, 1.0f},{0, {255,255,255}, 0, 0}, {0,0,-1}),
+
     Triangle({-0.5f, -0.5, 2.0f},{0.5f, -0.5, 2.0f},{-0.5f,-0.5, 3.0f},{0, {255,255,255}, 0, 0}, {0,-1,0}),
     Triangle({-0.5f, -0.5, 3.0f},{0.5f, -0.5, 2.0f},{0.5f, -0.5, 3.0f},{0, {255,255,255}, 0, 0}, {0,-1,0}),
 
@@ -588,9 +591,9 @@ int main() {
   for (int i = 0; i<roof.triangles.size(); i++) {
     triangles.triangles.push_back(roof.triangles[i]);
   }
-  for (int i = 0; i<cube_mesh.triangles.size(); i++) {
-    triangles.triangles.push_back(cube_mesh.triangles[i]);
-  }
+  // for (int i = 0; i<cube_mesh.triangles.size(); i++) {
+  //   triangles.triangles.push_back(cube_mesh.triangles[i]);
+  // }
   //
   for (int i = 0; i<light_source.triangles.size(); i++) {
     triangles.triangles.push_back(light_source.triangles[i]);
@@ -601,16 +604,17 @@ int main() {
   };
  
   vector<Sphere> spheres = {
-    // {{0,0,3}, 0.3, {0, {255, 0, 0}, 0, 0}},
+    {{-0.3,-0.3,2.5}, 0.2, {0, {255, 0, 0}, 0, 0}},
     // {{-0.6,0,4}, 0.3, {0, {255, 0,0}, 0.5, 0.5}},
-    // {{0.0,0,4}, 0.3, {0, {255, 0,0}, 0.0, 1.00}},
+    {{0.2,-0.3,2.5}, 0.3, {0, {255, 0,0}, 0.0, 1.00}},
     // {{0.6,0,4}, 0.3, {0, {255, 0,0}, 0.5, 0.98}},
     // {{1.2,0,4}, 0.3, {0, {255, 0,0}, 1.0, 0.4}},
     // {{0,-5001,0}, 5000, {0, {128, 128, 128}, 0, 0}},
     // {lights[0].position,0.1, {1, {255, 255,255},0,0}},
   };
  
-  constexpr int ray_samples = 50;
+  Vector camera_pos = {0,0,-3.8};
+  constexpr int ray_samples = 2;
  
   for (int y = 0; y<HEIGHT; y++) {
     std::cout << y << "/" << HEIGHT << std::endl;
