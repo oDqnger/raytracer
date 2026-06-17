@@ -457,7 +457,7 @@ bool shadow_calc(vector<Light> lights, vector<Sphere> spheres, vector<Triangle> 
 }
 
 Vector return_color(vector<Sphere> spheres, vector<Light> lights, Ray ray, vector<Triangle> triangles, Object closest_object, bool in_shadow) {
-  Vector color = {0,0,0};
+  Vector color = {135, 206, 245};
   Vector reflective_color = {0,0,0};
  
   if (closest_object.is_object) {
@@ -614,10 +614,10 @@ int main() {
   };
  
   Vector camera_pos = {0,0,-3.8};
-  constexpr int ray_samples = 2;
+  constexpr int ray_samples = 1;
  
+#pragma omp parallel for collapse(3)
   for (int y = 0; y<HEIGHT; y++) {
-    std::cout << y << "/" << HEIGHT << std::endl;
     for (int x = 0; x<WIDTH; x++) {
       Vector final_color = {0,0,0};
       Vector viewport_coords = {canvas_to_viewport(x, viewport_w, WIDTH),-canvas_to_viewport(y, viewport_h, HEIGHT),d};
@@ -634,9 +634,11 @@ int main() {
         final_color.y += color.y;
         final_color.z += color.z;
       }
-      data[index++] = final_color.x / ray_samples;
-      data[index++] = final_color.y / ray_samples;
-      data[index++] = final_color.z / ray_samples;
+
+      int base = (y * WIDTH + x) * 3;  // <-- the magic line
+      data[base] = final_color.x / ray_samples;
+      data[base+1] = final_color.y / ray_samples;
+      data[base+2] = final_color.z / ray_samples;
     }
   }
  
