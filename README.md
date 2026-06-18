@@ -6,21 +6,23 @@
 Features:  
     Lambert's cosine law  
     Diffuse reflection  
-    Specular reflection (still WIP)  
+    Specular reflection
     Shadows  
     Ray-sphere interception  
     Directional and point lights  
     Movable camera  
+    Emmisive objects
+    Added more support for interception with other primitives (only triangles)  
 
 TODO:  
-    Be able to render lights seperately  
-    Add more support for interception with other primitives (only triangles)  
-    Anti-aliasing  
-    Finish building the specular reflections (perfectly specular reflections and fuzzy specular highlights for shiny objects)  
-    Refraction  
+    Anti-aliasing 
+    Refraction
     Defocus blur  
+    Texture mapping
+    Render water surface (shouldnt be anything new to add)
+    Render grass
+    Any other light scattering model that i can code (only if time is present)
     Optimization:  
-        Creating threads to run different sections of the scene in parallel with different CPU cores  
         Bounding volume hierachy box  
         any other optimization tricks i can find  
     Later in the future:  

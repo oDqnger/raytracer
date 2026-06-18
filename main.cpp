@@ -14,7 +14,7 @@
  
 #define TBOUND 10000000
  
-#define MAX_BOUNCE_REFLECTION 10
+#define MAX_BOUNCE_REFLECTION 1
  
 using std::vector;
 
@@ -34,6 +34,7 @@ typedef struct {
   unsigned char color[3];
   float shinniness;
   float reflectiveness;
+  float refractive_index;
 } Material;
  
 typedef struct {
@@ -88,6 +89,12 @@ inline Vector normalize_vec(Vector vec) {
  
 inline Vector cross_product(Vector a, Vector b) {
   return {a.y*b.z - a.z*b.y, a.z*b.x - a.x*b.z, a.x*b.y - a.y*b.x};
+}
+
+inline Vector refract(Vector n, Vector i, float n1, float n2) {
+  Vector parallel = scale_vec(n, -n1/n2 * dot_prod(n, i) - sqrt(1-(n1*n1)/(n2*n2)*(1-pow(dot_prod(n, i),2))));
+
+  return add_vec(parallel, scale_vec(i,n1/n2));
 }
  
 Vector rotate_around_x(Vector a, float angle, Vector pivot) {
@@ -158,7 +165,7 @@ float ray_plane_interception(Vector o, Vector a, Vector n, Vector d, float min_b
   return 0;
 }
  
-float ray_sphere_interception(Vector d, Vector o, Vector center, float radius, float min_bound) {
+vector<float> ray_sphere_interception(Vector d, Vector o, Vector center, float radius) {
   Vector co = sub_vec(o, center);
   float a = dot_prod(d, d);
   float b = 2 * (dot_prod(co, d));
@@ -168,19 +175,25 @@ float ray_sphere_interception(Vector d, Vector o, Vector center, float radius, f
     float sq = sqrt(discriminant);
     float t1 = (-b + sq) / (2 * a);
     float t2 = (-b - sq) / (2 * a);
-    if (t1 > min_bound && t2 > min_bound) {
-      if (t1 <= t2) {
-        return t1;
-      } else {
-        return t2;
-      }
-    } else if (t1 > min_bound) {
+    return {t1, t2};
+  }
+  return {0,0};
+}
+
+float get_min_time(vector<float> times, float min_bound) {
+  float t1 = times[0];
+  float t2 = times[1];
+  if (t1 > min_bound && t2 > min_bound) {
+    if (t1 <= t2) {
       return t1;
-    } else if (t2 > min_bound){
+    } else {
       return t2;
     }
+  } else if (t1 > min_bound) {
+    return t1;
+  } else if (t2 > min_bound){
+    return t2;
   }
-  return 0;
 }
  
 float illumination_equation(vector<Light> light, Vector normal, Vector sphere_coords) {
@@ -398,7 +411,7 @@ Object return_intersection(vector<Sphere> spheres, vector<Triangle> triangles, R
   float min_time = INFINITY;
   Object closest_object;
   for (int i = 0; i<spheres.size(); i++) {
-    float t = ray_sphere_interception(ray.direction, ray.start_pos, spheres[i].center, spheres[i].radius, ray.starting_t);
+    float t = get_min_time(ray_sphere_interception(ray.direction, ray.start_pos, spheres[i].center, spheres[i].radius), ray.starting_t);
     if (t > 0 && t < min_time) {
       min_time = t;
       closest_object = Object(spheres[i], min_time);
@@ -430,7 +443,7 @@ bool shadow_calc(vector<Light> lights, vector<Sphere> spheres, vector<Triangle> 
       if (spheres[k].material.islight > 0) {
         continue;
       } else {
-        time = ray_sphere_interception(something, coords, spheres[k].center, spheres[k].radius, 0.001);
+        time = get_min_time(ray_sphere_interception(something, coords, spheres[k].center, spheres[k].radius), 0.01);
         if (time > 0 && time < 1) {
           in_shadow = true;
           break;
@@ -456,8 +469,8 @@ bool shadow_calc(vector<Light> lights, vector<Sphere> spheres, vector<Triangle> 
   return in_shadow;
 }
 
-Vector return_color(vector<Sphere> spheres, vector<Light> lights, Ray ray, vector<Triangle> triangles, Object closest_object, bool in_shadow) {
-  Vector color = {135, 206, 245};
+Vector return_color(vector<Sphere> spheres, vector<Light> lights, Ray ray, vector<Triangle> triangles, Object closest_object, bool in_shadow, float ri) {
+  Vector color = {0,0,0};
   Vector reflective_color = {0,0,0};
  
   if (closest_object.is_object) {
@@ -490,6 +503,13 @@ Vector return_color(vector<Sphere> spheres, vector<Light> lights, Ray ray, vecto
     }
 
     bool did_reflect = false;
+    if (closest_object.material.refractive_index != -1) {
+      Ray refracted_ray = {coords, refract(closest_object.normal, ray.direction, ri, closest_object.material.refractive_index), 1, ray_sphere_interception(ray.direction, ray.start_pos, closest_object.sphere.radius, closest_object.sphere.radius)[1], 0};
+      Object co = return_intersection(spheres, triangles, refracted_ray);
+      bool sha = shadow_calc(lights, spheres, triangles, co, refracted_ray);
+      Vector refracted_color = return_color(spheres, lights, refracted_ray, triangles, co, sha, closest_object.material.refractive_index);
+      return refracted_color;
+    }
     if (closest_object.material.reflectiveness > 0) {
       ray.bounces += 1;
       if (ray.bounces <= MAX_BOUNCE_REFLECTION) {
@@ -498,7 +518,7 @@ Vector return_color(vector<Sphere> spheres, vector<Light> lights, Ray ray, vecto
         reflected_ray.direction = normalize_vec(add_vec(reflected_ray.direction, scale_vec(normalize_vec(shiny_vec), closest_object.material.shinniness)));
         Object co = return_intersection(spheres, triangles, reflected_ray);
         bool sha = shadow_calc(lights, spheres, triangles, co, reflected_ray);
-        reflective_color = return_color(spheres, lights, reflected_ray, triangles, co, sha);
+        reflective_color = return_color(spheres, lights, reflected_ray, triangles, co, sha, ri);
       }
       did_reflect = true;
     }
@@ -514,7 +534,7 @@ Vector return_color(vector<Sphere> spheres, vector<Light> lights, Ray ray, vecto
       Ray diffuse_ray = {coords, normalize_vec(add_vec(closest_object.normal, random_dir)),ray.intensity, 0.001, ray.bounces};
       Object co = return_intersection(spheres, triangles, diffuse_ray);
       bool sha = shadow_calc(lights, spheres, triangles, co, diffuse_ray);
-      Vector diffuse_color = return_color(spheres, lights, diffuse_ray, triangles, co, sha);
+      Vector diffuse_color = return_color(spheres, lights, diffuse_ray, triangles, co, sha, ri);
       color.x = color.x + diffuse_color.x * closest_object.material.color[0] / 255.0f;
       color.y = color.y + diffuse_color.y * closest_object.material.color[1] / 255.0f;
       color.z = color.z + diffuse_color.z * closest_object.material.color[2] / 255.0f;
@@ -598,15 +618,19 @@ int main() {
   for (int i = 0; i<light_source.triangles.size(); i++) {
     triangles.triangles.push_back(light_source.triangles[i]);
   }
+
+  for (int i = 0; i<triangles.triangles.size(); i++) {
+    triangles.triangles[i].material.refractive_index = -1;
+  }
  
   vector<Light> lights = {
     {1.0, POSITIONAL, {light_source.pivot.x, light_source.pivot.y, light_source.pivot.z}},
   };
  
   vector<Sphere> spheres = {
-    {{-0.3,-0.3,2.5}, 0.2, {0, {255, 0, 0}, 0, 0}},
+    {{-0.3,-0.3,2.5}, 0.2, {0, {255, 0, 0}, 0, 0, 1.32}},
     // {{-0.6,0,4}, 0.3, {0, {255, 0,0}, 0.5, 0.5}},
-    {{0.2,-0.3,2.5}, 0.3, {0, {255, 0,0}, 0.0, 1.00}},
+    {{0.2,-0.3,2.5}, 0.3, {0, {255, 0,0}, 0.0, 1.00, -1}},
     // {{0.6,0,4}, 0.3, {0, {255, 0,0}, 0.5, 0.98}},
     // {{1.2,0,4}, 0.3, {0, {255, 0,0}, 1.0, 0.4}},
     // {{0,-5001,0}, 5000, {0, {128, 128, 128}, 0, 0}},
@@ -615,8 +639,7 @@ int main() {
  
   Vector camera_pos = {0,0,-3.8};
   constexpr int ray_samples = 1;
- 
-#pragma omp parallel for collapse(3)
+#pragma omp parallel for collapse(2)
   for (int y = 0; y<HEIGHT; y++) {
     for (int x = 0; x<WIDTH; x++) {
       Vector final_color = {0,0,0};
@@ -629,7 +652,7 @@ int main() {
       // bool in_shadow = false;
 
       for (int i = 0; i<ray_samples; i++) {
-        Vector color = return_color(spheres, lights, ray, triangles.triangles, closest_object, in_shadow);
+        Vector color = return_color(spheres, lights, ray, triangles.triangles, closest_object, in_shadow, 1);
         final_color.x += color.x;
         final_color.y += color.y;
         final_color.z += color.z;
