@@ -14,7 +14,7 @@
  
 #define TBOUND 10000000
  
-#define MAX_BOUNCE_REFLECTION 1
+#define MAX_BOUNCE_REFLECTION 0
  
 using std::vector;
 
@@ -165,7 +165,7 @@ float ray_plane_interception(Vector o, Vector a, Vector n, Vector d, float min_b
   return 0;
 }
  
-vector<float> ray_sphere_interception(Vector d, Vector o, Vector center, float radius) {
+float ray_sphere_interception(Vector d, Vector o, Vector center, float radius, float min_bound) {
   Vector co = sub_vec(o, center);
   float a = dot_prod(d, d);
   float b = 2 * (dot_prod(co, d));
@@ -175,25 +175,38 @@ vector<float> ray_sphere_interception(Vector d, Vector o, Vector center, float r
     float sq = sqrt(discriminant);
     float t1 = (-b + sq) / (2 * a);
     float t2 = (-b - sq) / (2 * a);
-    return {t1, t2};
-  }
-  return {0,0};
-}
-
-float get_min_time(vector<float> times, float min_bound) {
-  float t1 = times[0];
-  float t2 = times[1];
-  if (t1 > min_bound && t2 > min_bound) {
-    if (t1 <= t2) {
+    if (t1 > min_bound && t2 > min_bound) {
+      if (t1 <= t2) {
+        return t1;
+      } else {
+        return t2;
+      }
+    } else if (t1 > min_bound) {
       return t1;
-    } else {
+    } else if (t2 > min_bound){
       return t2;
     }
-  } else if (t1 > min_bound) {
-    return t1;
-  } else if (t2 > min_bound){
-    return t2;
   }
+  return 0;
+}
+
+vector<float> get_time(Vector d, Vector o, Vector center, float radius) {
+  Vector co = sub_vec(o, center);
+  float a = dot_prod(d, d);
+  float b = 2 * (dot_prod(co, d));
+  float c = dot_prod(co, co) - (radius * radius);
+  float discriminant = b*b - 4*a*c;
+  if (discriminant >= 0) {
+    float sq = sqrt(discriminant);
+    float t1 = (-b + sq) / (2 * a);
+    float t2 = (-b - sq) / (2 * a);
+    if (t1 <= t2) {
+      return {t1, t2};
+    } else {
+      return {t2, t1};
+    }
+  }
+  return {0,0};
 }
  
 float illumination_equation(vector<Light> light, Vector normal, Vector sphere_coords) {
@@ -411,7 +424,7 @@ Object return_intersection(vector<Sphere> spheres, vector<Triangle> triangles, R
   float min_time = INFINITY;
   Object closest_object;
   for (int i = 0; i<spheres.size(); i++) {
-    float t = get_min_time(ray_sphere_interception(ray.direction, ray.start_pos, spheres[i].center, spheres[i].radius), ray.starting_t);
+    float t = ray_sphere_interception(ray.direction, ray.start_pos, spheres[i].center, spheres[i].radius, ray.starting_t);
     if (t > 0 && t < min_time) {
       min_time = t;
       closest_object = Object(spheres[i], min_time);
@@ -443,7 +456,7 @@ bool shadow_calc(vector<Light> lights, vector<Sphere> spheres, vector<Triangle> 
       if (spheres[k].material.islight > 0) {
         continue;
       } else {
-        time = get_min_time(ray_sphere_interception(something, coords, spheres[k].center, spheres[k].radius), 0.01);
+        time = ray_sphere_interception(something, coords, spheres[k].center, spheres[k].radius, 0.001);
         if (time > 0 && time < 1) {
           in_shadow = true;
           break;
@@ -504,7 +517,7 @@ Vector return_color(vector<Sphere> spheres, vector<Light> lights, Ray ray, vecto
 
     bool did_reflect = false;
     if (closest_object.material.refractive_index != -1) {
-      Ray refracted_ray = {coords, refract(closest_object.normal, ray.direction, ri, closest_object.material.refractive_index), 1, ray_sphere_interception(ray.direction, ray.start_pos, closest_object.sphere.radius, closest_object.sphere.radius)[1], 0};
+      Ray refracted_ray = {coords, refract(closest_object.normal, ray.direction, ri, closest_object.material.refractive_index), 1, get_time(ray.direction, coords, closest_object.sphere.center, closest_object.sphere.radius)[1]+0.04f, 0};
       Object co = return_intersection(spheres, triangles, refracted_ray);
       bool sha = shadow_calc(lights, spheres, triangles, co, refracted_ray);
       Vector refracted_color = return_color(spheres, lights, refracted_ray, triangles, co, sha, closest_object.material.refractive_index);
@@ -628,7 +641,8 @@ int main() {
   };
  
   vector<Sphere> spheres = {
-    {{-0.3,-0.3,2.5}, 0.2, {0, {255, 0, 0}, 0, 0, 1.32}},
+    {{-0.3,-0.3,2.7}, 0.2, {0, {255, 0, 0}, 0, 0, -1}},
+    {{-0.3,-0.3,1.5}, 0.2, {0, {255, 0, 0}, 0, 0, 1.50}},
     // {{-0.6,0,4}, 0.3, {0, {255, 0,0}, 0.5, 0.5}},
     {{0.2,-0.3,2.5}, 0.3, {0, {255, 0,0}, 0.0, 1.00, -1}},
     // {{0.6,0,4}, 0.3, {0, {255, 0,0}, 0.5, 0.98}},
