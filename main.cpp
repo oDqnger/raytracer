@@ -8,13 +8,14 @@
 #define STB_IMAGE_WRITE_IMPLEMENTATION
 #include "./stb_image_write.h"
  
-#define WIDTH 800
-#define HEIGHT 800
+#define WIDTH 500
+#define HEIGHT 500
 #define COMP 3
  
 #define TBOUND 10000000
  
-#define MAX_BOUNCE_REFLECTION 0
+#define MAX_BOUNCE_DIFFUSE 10
+#define MAX_BOUNCE_REFLECTION 10
  
 using std::vector;
 
@@ -93,7 +94,6 @@ inline Vector cross_product(Vector a, Vector b) {
 
 inline Vector refract(Vector n, Vector i, float n1, float n2) {
   Vector parallel = scale_vec(n, -n1/n2 * dot_prod(n, i) - sqrt(1-(n1*n1)/(n2*n2)*(1-pow(dot_prod(n, i),2))));
-
   return add_vec(parallel, scale_vec(i,n1/n2));
 }
  
@@ -165,7 +165,7 @@ float ray_plane_interception(Vector o, Vector a, Vector n, Vector d, float min_b
   return 0;
 }
  
-float ray_sphere_interception(Vector d, Vector o, Vector center, float radius, float min_bound) {
+vector<float> ray_sphere_interception(Vector d, Vector o, Vector center, float radius, float min_bound) {
   Vector co = sub_vec(o, center);
   float a = dot_prod(d, d);
   float b = 2 * (dot_prod(co, d));
@@ -177,44 +177,25 @@ float ray_sphere_interception(Vector d, Vector o, Vector center, float radius, f
     float t2 = (-b - sq) / (2 * a);
     if (t1 > min_bound && t2 > min_bound) {
       if (t1 <= t2) {
-        return t1;
+        return {t1,t2};
       } else {
-        return t2;
+        return {t2,t1};
       }
     } else if (t1 > min_bound) {
-      return t1;
+      return {t1,0};
     } else if (t2 > min_bound){
-      return t2;
-    }
-  }
-  return 0;
-}
-
-vector<float> get_time(Vector d, Vector o, Vector center, float radius) {
-  Vector co = sub_vec(o, center);
-  float a = dot_prod(d, d);
-  float b = 2 * (dot_prod(co, d));
-  float c = dot_prod(co, co) - (radius * radius);
-  float discriminant = b*b - 4*a*c;
-  if (discriminant >= 0) {
-    float sq = sqrt(discriminant);
-    float t1 = (-b + sq) / (2 * a);
-    float t2 = (-b - sq) / (2 * a);
-    if (t1 <= t2) {
-      return {t1, t2};
-    } else {
-      return {t2, t1};
+      return {t2,0};
     }
   }
   return {0,0};
 }
  
-float illumination_equation(vector<Light> light, Vector normal, Vector sphere_coords) {
+float illumination_equation(vector<Light> light, Vector normal, Vector coords) {
   float total_illum = 0;
   Vector light_dir;
   for (int i = 0; i<light.size(); i++) {
     if (light[i].type == POSITIONAL) {
-      light_dir = sub_vec((light[i].position), sphere_coords);
+      light_dir = sub_vec((light[i].position), coords);
     } else {
       light_dir = light[i].position;
     }
@@ -424,7 +405,7 @@ Object return_intersection(vector<Sphere> spheres, vector<Triangle> triangles, R
   float min_time = INFINITY;
   Object closest_object;
   for (int i = 0; i<spheres.size(); i++) {
-    float t = ray_sphere_interception(ray.direction, ray.start_pos, spheres[i].center, spheres[i].radius, ray.starting_t);
+    float t = ray_sphere_interception(ray.direction, ray.start_pos, spheres[i].center, spheres[i].radius, ray.starting_t)[0];
     if (t > 0 && t < min_time) {
       min_time = t;
       closest_object = Object(spheres[i], min_time);
@@ -456,7 +437,7 @@ bool shadow_calc(vector<Light> lights, vector<Sphere> spheres, vector<Triangle> 
       if (spheres[k].material.islight > 0) {
         continue;
       } else {
-        time = ray_sphere_interception(something, coords, spheres[k].center, spheres[k].radius, 0.001);
+        time = ray_sphere_interception(something, coords, spheres[k].center, spheres[k].radius, 0.001)[0];
         if (time > 0 && time < 1) {
           in_shadow = true;
           break;
@@ -466,7 +447,10 @@ bool shadow_calc(vector<Light> lights, vector<Sphere> spheres, vector<Triangle> 
 
     if (!in_shadow) {
       for (int k = 0; k<triangles.size(); k++) {
-        float time = ray_plane_interception(coords, triangles[k].a2, triangles[k].normal, something, 0.01);
+        if (triangles[k].material.islight > 0) {
+          continue;
+        }
+        float time = ray_plane_interception(coords, triangles[k].a2, triangles[k].normal, something, 0.001);
         if (time > 0 && time < 1) {
           Vector triang_coords = get_coords_from_ray((coords), time, something);
           bool istriangle = point_on_triangle((triangles[k].a1), triangles[k].a2, triangles[k].a3, triang_coords);
@@ -482,11 +466,12 @@ bool shadow_calc(vector<Light> lights, vector<Sphere> spheres, vector<Triangle> 
   return in_shadow;
 }
 
-Vector return_color(vector<Sphere> spheres, vector<Light> lights, Ray ray, vector<Triangle> triangles, Object closest_object, bool in_shadow, float ri) {
+Vector return_color(vector<Sphere> spheres, vector<Light> lights, Ray ray, vector<Triangle> triangles, Object closest_object, float ri) {
   Vector color = {0,0,0};
   Vector reflective_color = {0,0,0};
  
   if (closest_object.is_object) {
+    bool in_shadow = shadow_calc(lights, spheres, triangles, closest_object, ray);
     if (closest_object.material.islight > 0) {
       return {
         std::min((float)closest_object.material.color[0] * closest_object.material.islight, 255.0f),
@@ -501,27 +486,29 @@ Vector return_color(vector<Sphere> spheres, vector<Light> lights, Ray ray, vecto
   
     if (!in_shadow) {
       float total_illum;
-      if (closest_object.is_sphere == false) {
-          closest_object.normal = scale_vec(closest_object.normal, -1);
-      }
       total_illum = illumination_equation(lights, closest_object.normal, coords);
      
-      color.x = closest_object.material.color[0] * total_illum > 255 ? 255 : closest_object.material.color[0] * total_illum;
-      color.y = closest_object.material.color[1] * total_illum > 255 ? 255 : closest_object.material.color[1] * total_illum;
-      color.z = closest_object.material.color[2] * total_illum > 255 ? 255 : closest_object.material.color[2] * total_illum;
-    } else {
-      color.x = 0;
-      color.y = 0;
-      color.z = 0;
+      color.x = closest_object.material.color[0] * total_illum;
+      color.y = closest_object.material.color[1] * total_illum;
+      color.z = closest_object.material.color[2] * total_illum;
     }
 
     bool did_reflect = false;
     if (closest_object.material.refractive_index != -1) {
-      Ray refracted_ray = {coords, refract(closest_object.normal, ray.direction, ri, closest_object.material.refractive_index), 1, get_time(ray.direction, coords, closest_object.sphere.center, closest_object.sphere.radius)[1]+0.04f, 0};
-      Object co = return_intersection(spheres, triangles, refracted_ray);
-      bool sha = shadow_calc(lights, spheres, triangles, co, refracted_ray);
-      Vector refracted_color = return_color(spheres, lights, refracted_ray, triangles, co, sha, closest_object.material.refractive_index);
-      return refracted_color;
+      if (ray.bounces <= MAX_BOUNCE_REFLECTION) {
+        Vector refracted_direction_enter = refract(scale_vec(closest_object.normal,-1), ray.direction, 1, closest_object.material.refractive_index);
+        Vector refracted_coords = coords;
+        if (closest_object.is_sphere) {
+          // refracted_coords = add_vec(coords, scale_vec(sub_vec(coords, closest_object.sphere.center),-2));
+          vector<float> rt = ray_sphere_interception(ray.direction, ray.start_pos, closest_object.sphere.center, closest_object.sphere.radius, ray.starting_t);
+          refracted_coords = get_coords_from_ray(ray.start_pos, rt[1], ray.direction);
+          refracted_direction_enter = refract(scale_vec(closest_object.normal,1), ray.direction, 1, closest_object.material.refractive_index);
+        }
+        
+        Ray refracted_ray = {refracted_coords, refracted_direction_enter, ray.intensity,0.001f, ray.bounces+1};
+        Object co = return_intersection(spheres, triangles, refracted_ray);
+        return return_color(spheres, lights, refracted_ray, triangles, co, closest_object.material.refractive_index);
+      }
     }
     if (closest_object.material.reflectiveness > 0) {
       ray.bounces += 1;
@@ -531,7 +518,7 @@ Vector return_color(vector<Sphere> spheres, vector<Light> lights, Ray ray, vecto
         reflected_ray.direction = normalize_vec(add_vec(reflected_ray.direction, scale_vec(normalize_vec(shiny_vec), closest_object.material.shinniness)));
         Object co = return_intersection(spheres, triangles, reflected_ray);
         bool sha = shadow_calc(lights, spheres, triangles, co, reflected_ray);
-        reflective_color = return_color(spheres, lights, reflected_ray, triangles, co, sha, ri);
+        reflective_color = return_color(spheres, lights, reflected_ray, triangles, co, ri);
       }
       did_reflect = true;
     }
@@ -539,18 +526,19 @@ Vector return_color(vector<Sphere> spheres, vector<Light> lights, Ray ray, vecto
     color.x = color.x * (1-closest_object.material.reflectiveness) * ray.intensity + reflective_color.x * closest_object.material.reflectiveness;
     color.y = color.y * (1-closest_object.material.reflectiveness) * ray.intensity + reflective_color.y * closest_object.material.reflectiveness;
     color.z = color.z * (1-closest_object.material.reflectiveness) * ray.intensity + reflective_color.z * closest_object.material.reflectiveness;
-    if (ray.bounces < MAX_BOUNCE_REFLECTION && did_reflect == false) {
+    if (ray.bounces < MAX_BOUNCE_DIFFUSE && did_reflect == false) {
       Vector random_dir = gen_rand_vec();
       if (dot_prod(random_dir, closest_object.normal) < 0) {
         random_dir = scale_vec(random_dir, -1);
       }
-      Ray diffuse_ray = {coords, normalize_vec(add_vec(closest_object.normal, random_dir)),ray.intensity, 0.001, ray.bounces};
+      Ray diffuse_ray = {coords, normalize_vec(add_vec(closest_object.normal, random_dir)),ray.intensity, 0.001, ray.bounces+1};
       Object co = return_intersection(spheres, triangles, diffuse_ray);
       bool sha = shadow_calc(lights, spheres, triangles, co, diffuse_ray);
-      Vector diffuse_color = return_color(spheres, lights, diffuse_ray, triangles, co, sha, ri);
+      Vector diffuse_color = return_color(spheres, lights, diffuse_ray, triangles, co, ri);
       color.x = color.x + diffuse_color.x * closest_object.material.color[0] / 255.0f;
       color.y = color.y + diffuse_color.y * closest_object.material.color[1] / 255.0f;
       color.z = color.z + diffuse_color.z * closest_object.material.color[2] / 255.0f;
+
       color.x = std::min(color.x, 255.0f);
       color.y = std::min(color.y, 255.0f);
       color.z = std::min(color.z, 255.0f);
@@ -570,45 +558,44 @@ int main() {
   vector<Triangle> cube = {
     Triangle({-0.5f, -0.5, 2.0f},{ 0.5f, -0.5, 2.0f},{-0.5f,  0.5, 2.0f},{0, {255,0,0}, 0, 0}, {0,0,1}),
     Triangle({0.5f, 0.5, 2.0f},{ 0.5f, -0.5, 2.0f},{-0.5f,  0.5, 2.0f},{0, {255,0,0}, 0, 0}, {0,0,1}),
-
-    Triangle({-0.5f, -0.5, 3.0f},{ 0.5f, -0.5, 3.0f},{-0.5f,  0.5, 3.0f},{0, {255,0,0}, 0, 0}, {0,0,-1}),
-    Triangle({0.5f, 0.5, 3.0f},{ 0.5f, -0.5, 3.0f},{-0.5f,  0.5, 3.0f},{0, {255,0,0}, 0, 0}, {0,0,-1}),
-
-    Triangle({-0.5f, 0.5, 2.0f},{-0.5f, 0.5, 3.0f},{-0.5f,-0.5, 3.0f},{0, {255,0,0}, 0, 0}, {1,0,0}),
-    Triangle({-0.5f, -0.5, 2.0f},{-0.5f, 0.5, 2.0f},{-0.5f, -0.5, 3.0f},{0, {255,0,0}, 0, 0}, {1,0,0}),
-
-    Triangle({0.5f, 0.5, 2.0f},{0.5f, 0.5, 3.0f},{0.5f,-0.5, 3.0f},{0, {255,0,0}, 0, 0}, {-1,0,0}),
-    Triangle({0.5f, -0.5, 2.0f},{0.5f, 0.5, 2.0f},{0.5f, -0.5, 3.0f},{0, {255,0,0}, 0, 0}, {-1,0,0}),
-
-    Triangle({-0.5f, 0.5, 2.0f},{0.5f, 0.5, 2.0f},{-0.5f,0.5, 3.0f},{0, {255,0,0}, 0, 0}, {0,1,0}),
-    Triangle({-0.5f, 0.5, 3.0f},{0.5f, 0.5, 2.0f},{0.5f, 0.5, 3.0f},{0, {255,0,0}, 0, 0}, {0,1,0}),
-
-    Triangle({-0.5f, -0.5, 2.0f},{0.5f, -0.5, 2.0f},{-0.5f,-0.5, 3.0f},{0, {255,0,0}, 0, 0}, {0,-1,0}),
-    Triangle({-0.5f, -0.5, 3.0f},{0.5f, -0.5, 2.0f},{0.5f, -0.5, 3.0f},{0, {255,0,0}, 0, 0}, {0,-1,0}),
+    //
+    // Triangle({-0.5f, -0.5, 3.0f},{ 0.5f, -0.5, 3.0f},{-0.5f,  0.5, 3.0f},{0, {255,0,0}, 0, 0}, {0,0,-1}),
+    // Triangle({0.5f, 0.5, 3.0f},{ 0.5f, -0.5, 3.0f},{-0.5f,  0.5, 3.0f},{0, {255,0,0}, 0, 0}, {0,0,-1}),
+    //
+    // Triangle({-0.5f, 0.5, 2.0f},{-0.5f, 0.5, 3.0f},{-0.5f,-0.5, 3.0f},{0, {255,0,0}, 0, 0}, {1,0,0}),
+    // Triangle({-0.5f, -0.5, 2.0f},{-0.5f, 0.5, 2.0f},{-0.5f, -0.5, 3.0f},{0, {255,0,0}, 0, 0}, {1,0,0}),
+    //
+    // Triangle({0.5f, 0.5, 2.0f},{0.5f, 0.5, 3.0f},{0.5f,-0.5, 3.0f},{0, {255,0,0}, 0, 0}, {-1,0,0}),
+    // Triangle({0.5f, -0.5, 2.0f},{0.5f, 0.5, 2.0f},{0.5f, -0.5, 3.0f},{0, {255,0,0}, 0, 0}, {-1,0,0}),
+    //
+    // Triangle({-0.5f, 0.5, 2.0f},{0.5f, 0.5, 2.0f},{-0.5f,0.5, 3.0f},{0, {255,0,0}, 0, 0}, {0,1,0}),
+    // Triangle({-0.5f, 0.5, 3.0f},{0.5f, 0.5, 2.0f},{0.5f, 0.5, 3.0f},{0, {255,0,0}, 0, 0}, {0,1,0}),
+    //
+    // Triangle({-0.5f, -0.5, 2.0f},{0.5f, -0.5, 2.0f},{-0.5f,-0.5, 3.0f},{0, {255,0,0}, 0, 0}, {0,-1,0}),
+    // Triangle({-0.5f, -0.5, 3.0f},{0.5f, -0.5, 2.0f},{0.5f, -0.5, 3.0f},{0, {255,0,0}, 0, 0}, {0,-1,0}),
   };
   Mesh cube_mesh = Mesh(cube);
-  cube_mesh.rotate_y(30);
-  cube_mesh.scale({0.3, 0.5, 0.3});
-  cube_mesh.translate({-0.2, -0.4, 0.5});
+  cube_mesh.scale({0.3, 0.3, 0.3});
+  cube_mesh.translate({0, -0.25, -0.5});
 
   Mesh roof = Mesh({
-    Triangle({-0.5f, -0.5, 1.0f},{ 0.5f, -0.5, 1.0f},{-0.5f,  0.5, 1.0f},{0, {255,255,255}, 0, 0}, {0,0,-1}),
-    Triangle({0.5f, 0.5, 1.0f},{ 0.5f, -0.5, 1.0f},{-0.5f,  0.5, 1.0f},{0, {255,255,255}, 0, 0}, {0,0,-1}),
+    Triangle({-0.5f, -0.5, 1.0f},{ 0.5f, -0.5, 1.0f},{-0.5f,  0.5, 1.0f},{0, {255,255,255}, 0, 0}, {0,0,1}),
+    Triangle({0.5f, 0.5, 1.0f},{ 0.5f, -0.5, 1.0f},{-0.5f,  0.5, 1.0f},{0, {255,255,255}, 0, 0}, {0,0,1}),
 
-    Triangle({-0.5f, -0.5, 2.0f},{0.5f, -0.5, 2.0f},{-0.5f,-0.5, 3.0f},{0, {255,255,255}, 0, 0}, {0,-1,0}),
-    Triangle({-0.5f, -0.5, 3.0f},{0.5f, -0.5, 2.0f},{0.5f, -0.5, 3.0f},{0, {255,255,255}, 0, 0}, {0,-1,0}),
+    Triangle({-0.5f, -0.5, 2.0f},{0.5f, -0.5, 2.0f},{-0.5f,-0.5, 3.0f},{0, {255,255,255}, 0, 0}, {0,1,0}),
+    Triangle({-0.5f, -0.5, 3.0f},{0.5f, -0.5, 2.0f},{0.5f, -0.5, 3.0f},{0, {255,255,255}, 0, 0}, {0,1,0}),
 
-    Triangle({-0.5f, 0.5, 2.0f},{-0.5f, 0.5, 3.0f},{-0.5f,-0.5, 3.0f},{0, {255,0,0}, 0, 0}, {-1,0,0}),
-    Triangle({-0.5f, -0.5, 2.0f},{-0.5f, 0.5, 2.0f},{-0.5f, -0.5, 3.0f},{0, {255,0,0}, 0, 0}, {-1,0,0}),
+    Triangle({-0.5f, 0.5, 2.0f},{-0.5f, 0.5, 5.0f},{-0.5f,-0.5, 5.0f},{0, {255,0,0}, 0, 0}, {1,0,0}),
+    Triangle({-0.5f, -0.5, 2.0f},{-0.5f, 0.5, 2.0f},{-0.5f, -0.5, 5.0f},{0, {255,0,0}, 0, 0}, {1,0,0}),
 
-    Triangle({0.5f, 0.5, 2.0f},{0.5f, 0.5, 3.0f},{0.5f,-0.5, 3.0f},{0, {0,255,0}, 0, 0}, {1,0,0}),
-    Triangle({0.5f, -0.5, 2.0f},{0.5f, 0.5, 2.0f},{0.5f, -0.5, 3.0f},{0, {0,255,0}, 0, 0}, {1,0,0}),
+    Triangle({0.5f, 0.5, 2.0f},{0.5f, 0.5, 5.0f},{0.5f,-0.5, 5.0f},{0, {0,255,0}, 0, 0}, {-1,0,0}),
+    Triangle({0.5f, -0.5, 2.0f},{0.5f, 0.5, 2.0f},{0.5f, -0.5, 5.0f},{0, {0,255,0}, 0, 0}, {-1,0,0}),
 
-    Triangle({-0.5f, -0.5, 3.0f},{ 0.5f, -0.5, 3.0f},{-0.5f,  0.5, 3.0f},{0, {255,255,255}, 0, 0}, {0,0,1}),
-    Triangle({0.5f, 0.5, 3.0f},{ 0.5f, -0.5, 3.0f},{-0.5f,  0.5, 3.0f},{0, {255,255,255}, 0, 0}, {0,0,1}),
+    Triangle({-0.5f, -0.5, 3.0f},{ 0.5f, -0.5, 3.0f},{-0.5f,  0.5, 3.0f},{0, {255,255,255}, 0, 0}, {0,0,-1}),
+    Triangle({0.5f, 0.5, 3.0f},{ 0.5f, -0.5, 3.0f},{-0.5f,  0.5, 3.0f},{0, {255,255,255}, 0, 0}, {0,0,-1}),
 
-    Triangle({-0.5f, 0.5, 2.0f},{0.5f, 0.5, 2.0f},{-0.5f,0.5, 3.0f},{0, {255,255,255}, 0, 0}, {0,1,0}),
-    Triangle({-0.5f, 0.5, 3.0f},{0.5f, 0.5, 2.0f},{0.5f, 0.5, 3.0f},{0, {255,255,255}, 0, 0}, {0,1,0}),
+    Triangle({-0.5f, 0.5, 2.0f},{0.5f, 0.5, 2.0f},{-0.5f,0.5, 3.0f},{0, {255,255,255}, 0, 0}, {0,-1,0}),
+    Triangle({-0.5f, 0.5, 3.0f},{0.5f, 0.5, 2.0f},{0.5f, 0.5, 3.0f},{0, {255,255,255}, 0, 0}, {0,-1,0}),
   });
 
   roof.scale({1.2,1.2,1.2});
@@ -617,41 +604,36 @@ int main() {
     Triangle({-0.5f, 0.49, 2.0f},{0.5f, 0.49, 2.0f},{-0.5f,0.49, 3.0f},{1, {255,255,255}, 0, 0}, {0,-1,0}),
     Triangle({-0.5f, 0.49, 3.0f},{0.5f, 0.49, 2.0f},{0.5f, 0.49, 3.0f},{1, {255,255,255}, 0, 0}, {0,-1,0}),
   });
-  light_source.scale({0.5, 0.5, 0.5});
-  light_source.translate({0,0.1, 0});
+  light_source.scale({0.2, 0.2, 0.2});
+  light_source.translate({0,0.1, -0.2});
 
   Mesh triangles = Mesh({});
   for (int i = 0; i<roof.triangles.size(); i++) {
+    roof.triangles[i].material.refractive_index = -1;
     triangles.triangles.push_back(roof.triangles[i]);
   }
-  // for (int i = 0; i<cube_mesh.triangles.size(); i++) {
-  //   triangles.triangles.push_back(cube_mesh.triangles[i]);
-  // }
+  for (int i = 0; i<cube_mesh.triangles.size(); i++) {
+    cube_mesh.triangles[i].material.refractive_index = 4.5;
+    triangles.triangles.push_back(cube_mesh.triangles[i]);
+  }
   //
   for (int i = 0; i<light_source.triangles.size(); i++) {
+    light_source.triangles[i].material.refractive_index = -1;
     triangles.triangles.push_back(light_source.triangles[i]);
   }
 
-  for (int i = 0; i<triangles.triangles.size(); i++) {
-    triangles.triangles[i].material.refractive_index = -1;
-  }
+  vector<Sphere> spheres = {
+    // {{-0.3,-0.3,2.5}, 0.10, {0.0, {255, 0,0}, 0.0, 0.0, -1}},
+    // {{0.1,-0.3,2.5}, 0.20, {0.0, {0, 255,0}, 0.0, 1.0, -1}},
+    // {{-0.3,-0.3,2.5}, 0.20, {0.0, {0, 255,0}, 0.0, 1.0, -1}},
+  };
  
   vector<Light> lights = {
-    {1.0, POSITIONAL, {light_source.pivot.x, light_source.pivot.y, light_source.pivot.z}},
+    {0.8, POSITIONAL, {light_source.pivot.x, light_source.pivot.y, light_source.pivot.z}},
+    // {0.8, POSITIONAL, {-0.3, -0.3, 1.5}},
   };
  
-  vector<Sphere> spheres = {
-    {{-0.3,-0.3,2.7}, 0.2, {0, {255, 0, 0}, 0, 0, -1}},
-    {{-0.3,-0.3,1.5}, 0.2, {0, {255, 0, 0}, 0, 0, 1.50}},
-    // {{-0.6,0,4}, 0.3, {0, {255, 0,0}, 0.5, 0.5}},
-    {{0.2,-0.3,2.5}, 0.3, {0, {255, 0,0}, 0.0, 1.00, -1}},
-    // {{0.6,0,4}, 0.3, {0, {255, 0,0}, 0.5, 0.98}},
-    // {{1.2,0,4}, 0.3, {0, {255, 0,0}, 1.0, 0.4}},
-    // {{0,-5001,0}, 5000, {0, {128, 128, 128}, 0, 0}},
-    // {lights[0].position,0.1, {1, {255, 255,255},0,0}},
-  };
- 
-  Vector camera_pos = {0,0,-3.8};
+  Vector camera_pos = {0,0,-2.8};
   constexpr int ray_samples = 1;
 #pragma omp parallel for collapse(2)
   for (int y = 0; y<HEIGHT; y++) {
@@ -662,17 +644,15 @@ int main() {
 
       Ray ray = {camera_pos, direction, 1, 1, 0};
       Object closest_object = return_intersection(spheres, triangles.triangles, ray);
-      bool in_shadow = shadow_calc(lights, spheres, triangles.triangles, closest_object, ray);
-      // bool in_shadow = false;
 
       for (int i = 0; i<ray_samples; i++) {
-        Vector color = return_color(spheres, lights, ray, triangles.triangles, closest_object, in_shadow, 1);
+        Vector color = return_color(spheres, lights, ray, triangles.triangles, closest_object, 1);
         final_color.x += color.x;
         final_color.y += color.y;
         final_color.z += color.z;
       }
 
-      int base = (y * WIDTH + x) * 3;  // <-- the magic line
+      int base = (y * WIDTH + x) * 3;
       data[base] = final_color.x / ray_samples;
       data[base+1] = final_color.y / ray_samples;
       data[base+2] = final_color.z / ray_samples;
